@@ -11,7 +11,7 @@ import { OptimisticChecklist } from '@/components/OptimisticChecklist';
 import { DecisionTreeComponent } from '@/components/DecisionTree';
 import { ProgressCircle } from '@/components/ProgressCircle';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Download, Share2 } from 'lucide-react';
+import { ArrowLeft, Download, Share2, Edit, CheckSquare, Settings2, FileText, ChevronRight } from 'lucide-react';
 
 interface PolicyDetailClientProps {
   policy: Policy;
@@ -32,34 +32,53 @@ export function PolicyDetailClient({
         animate={{ opacity: 1, y: 0 }}
         className="space-y-4"
       >
-        <div className="flex items-center gap-3">
-          <Link href="/dashboard">
-            <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
-              <ArrowLeft className="w-4 h-4" />
+        <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+          <div className="space-y-3">
+            <div className="flex items-center gap-3 mb-2">
+              <Link href="/dashboard">
+                <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-white hover:bg-white/5 transition-colors group">
+                  <ArrowLeft className="w-4 h-4 mr-1 transition-transform group-hover:-translate-x-1" />
+                  Back
+                </Button>
+              </Link>
+              <Badge
+                variant="default"
+                className={
+                  policy.status === 'active'
+                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                    : policy.status === 'draft'
+                      ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                      : 'bg-muted text-foreground'
+                }
+              >
+                {policy.status.toUpperCase()}
+              </Badge>
+              <span className="text-xs text-muted-foreground font-medium flex items-center gap-1">
+                Updated {new Date(policy.updatedAt).toLocaleDateString()}
+              </span>
+            </div>
+
+            <h1 className="text-3xl lg:text-4xl font-bold text-white tracking-tight">{policy.title}</h1>
+            <p className="text-gray-400 max-w-2xl leading-relaxed text-sm md:text-base">
+              {policy.description}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 pt-2">
+            <Button variant="outline" className="bg-[#0f172a] border-gray-800 text-gray-300 hover:text-white hover:bg-[#1e293b] hover:border-gray-600 transition-colors">
+              <Share2 className="w-4 h-4 mr-2" /> Share
             </Button>
-          </Link>
-          <h1 className="text-3xl font-bold text-foreground">{policy.title}</h1>
+            <Button variant="outline" className="bg-[#0f172a] border-gray-800 text-gray-300 hover:text-white hover:bg-[#1e293b] hover:border-gray-600 transition-colors">
+              <Download className="w-4 h-4 mr-2" /> Export PDF
+            </Button>
+            <Button variant="outline" className="bg-[#0f172a] border-gray-800 text-gray-300 hover:text-white hover:bg-[#1e293b] hover:border-gray-600 transition-colors">
+              <Edit className="w-4 h-4 mr-2" /> Edit Policy
+            </Button>
+            <Button className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium shadow-lg shadow-emerald-900/20 border-0">
+              <CheckSquare className="w-4 h-4 mr-2" /> Mark Complete
+            </Button>
+          </div>
         </div>
-
-        <div className="flex items-center gap-4">
-          <Badge
-            variant="default"
-            className={
-              policy.status === 'active'
-                ? 'bg-emerald-600 text-white'
-                : policy.status === 'draft'
-                  ? 'bg-amber-600 text-white'
-                  : 'bg-muted text-foreground'
-            }
-          >
-            {policy.status.toUpperCase()}
-          </Badge>
-          <span className="text-sm text-muted-foreground">
-            Updated {new Date(policy.updatedAt).toLocaleDateString()}
-          </span>
-        </div>
-
-        <p className="text-muted-foreground">{policy.description}</p>
       </motion.div>
 
       {/* Progress Overview */}
@@ -68,15 +87,16 @@ export function PolicyDetailClient({
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
       >
-        <Card className="p-6 bg-card border-border">
+        <Card className="p-6 bg-[#0f172a] border-gray-800 shadow-xl shadow-black/20 rounded-2xl">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-lg font-semibold text-foreground mb-2">
-                Overall Progress
+              <h3 className="text-lg font-semibold text-white mb-2 flex items-center gap-2">
+                <Settings2 className="w-5 h-5 text-emerald-500" />
+                Execution Progress
               </h3>
-              <p className="text-sm text-muted-foreground">
-                {Object.values(checklistState.items).filter(Boolean).length} of{' '}
-                {Object.keys(checklistState.items).length} items complete
+              <p className="text-sm text-gray-400">
+                <span className="text-white font-medium">{Object.values(checklistState.items).filter(Boolean).length}</span> of{' '}
+                <span className="text-white font-medium">{Object.keys(checklistState.items).length}</span> steps completed
               </p>
             </div>
             <ProgressCircle
@@ -88,95 +108,130 @@ export function PolicyDetailClient({
         </Card>
       </motion.div>
 
-      {/* Main Content Tabs */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-      >
-        <Tabs defaultValue="checklist" className="w-full">
-          <TabsList className="grid w-full grid-cols-3 bg-muted">
-            <TabsTrigger value="checklist">Checklist</TabsTrigger>
-            <TabsTrigger value="tree">Decision Tree</TabsTrigger>
-            <TabsTrigger value="workflow">Workflow</TabsTrigger>
-          </TabsList>
+      {/* Grid Layout: Left (60%) / Right (40%) */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 xl:gap-8 min-h-[calc(100vh-16rem)]">
 
-          {/* Checklist Tab */}
-          <TabsContent value="checklist" className="space-y-4 mt-6">
+        {/* ── LEFT COLUMN (60%): Workflow + Checklist ───────────────────────── */}
+        <motion.div
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.2 }}
+          className="lg:col-span-3 space-y-6 flex flex-col h-full"
+        >
+          {/* Workflow Section */}
+          <Card className="p-6 bg-[#020617] border-gray-800 rounded-2xl flex-shrink-0">
+            <div className="flex items-center gap-2 mb-6 pb-4 border-b border-gray-800">
+              <div className="p-1.5 bg-blue-500/10 rounded-lg">
+                <Settings2 className="w-4 h-4 text-blue-500" />
+              </div>
+              <h3 className="text-sm font-semibold text-white uppercase tracking-wider">
+                Execution Workflow
+              </h3>
+            </div>
+
+            <div className="space-y-4">
+              {policy.steps.map((step, idx) => (
+                <motion.div
+                  key={step.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: idx * 0.05 + 0.3 }}
+                  className="p-4 bg-[#0f172a] hover:bg-[#151f32] rounded-xl border border-gray-800 hover:border-gray-700 transition-colors group flex items-start gap-4"
+                >
+                  <div className="w-8 h-8 rounded-full bg-blue-500/10 border border-blue-500/20 flex items-center justify-center flex-shrink-0 text-blue-400 font-bold text-sm">
+                    {step.order}
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <div className="flex justify-between items-start mb-1 gap-4">
+                      <h4 className="font-semibold text-white truncate text-base">
+                        {step.title}
+                      </h4>
+                      <Badge
+                        variant="outline"
+                        className={`flex-shrink-0 text-[10px] uppercase tracking-wider ${step.status === 'completed'
+                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                          : step.status === 'in-progress'
+                            ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                            : 'bg-gray-800 text-gray-400 border-gray-700'
+                          }`}
+                      >
+                        {step.status}
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-gray-400 leading-relaxed">
+                      {step.description}
+                    </p>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          </Card>
+
+          {/* Checklist Section */}
+          <Card className="p-6 bg-[#020617] border-gray-800 rounded-2xl flex-1">
+            <div className="flex items-center gap-2 mb-6 pb-4 border-b border-gray-800">
+              <div className="p-1.5 bg-emerald-500/10 rounded-lg">
+                <CheckSquare className="w-4 h-4 text-emerald-500" />
+              </div>
+              <h3 className="text-sm font-semibold text-white uppercase tracking-wider">
+                Action Items Checklist
+              </h3>
+            </div>
             <OptimisticChecklist
               policyId={policy.id}
               items={policy.checklist_items}
               initialState={checklistState}
               onStateChange={setChecklistState}
             />
-          </TabsContent>
+          </Card>
+        </motion.div>
 
-          {/* Decision Tree Tab */}
-          <TabsContent value="tree" className="space-y-4 mt-6">
-            <DecisionTreeComponent tree={policy.decisionTree} />
-          </TabsContent>
-
-          {/* Workflow Tab */}
-          <TabsContent value="workflow" className="space-y-4 mt-6">
-            <Card className="p-6 bg-card border-border">
-              <h3 className="text-lg font-semibold text-foreground mb-4">
-                Workflow Steps
-              </h3>
-              <div className="space-y-3">
-                {policy.steps.map((step, idx) => (
-                  <motion.div
-                    key={step.id}
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: idx * 0.1 }}
-                    className="p-4 bg-muted rounded-lg border border-border"
-                  >
-                    <div className="flex items-start justify-between mb-2">
-                      <div>
-                        <h4 className="font-semibold text-foreground">
-                          {step.order}. {step.title}
-                        </h4>
-                        <p className="text-sm text-muted-foreground mt-1">
-                          {step.description}
-                        </p>
-                      </div>
-                      <Badge
-                        variant="outline"
-                        className={
-                          step.status === 'completed'
-                            ? 'bg-emerald-600/10 text-emerald-700 border-emerald-600/20'
-                            : step.status === 'in-progress'
-                              ? 'bg-blue-600/10 text-blue-700 border-blue-600/20'
-                              : 'bg-muted text-foreground'
-                        }
-                      >
-                        {step.status}
-                      </Badge>
-                    </div>
-                  </motion.div>
-                ))}
+        {/* ── RIGHT COLUMN (40%): Decision Tree + Preview ──────────────────── */}
+        <motion.div
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.3 }}
+          className="lg:col-span-2 space-y-6 flex flex-col h-full"
+        >
+          {/* Decision Tree Section */}
+          <Card className="p-6 bg-[#020617] border-gray-800 rounded-2xl flex-1 min-h-[400px] flex flex-col">
+            <div className="flex items-center gap-2 mb-6 pb-4 border-b border-gray-800">
+              <div className="p-1.5 bg-amber-500/10 rounded-lg">
+                <Settings2 className="w-4 h-4 text-amber-500 transform rotate-90" />
               </div>
-            </Card>
-          </TabsContent>
-        </Tabs>
-      </motion.div>
+              <h3 className="text-sm font-semibold text-white uppercase tracking-wider">
+                Decision Matrix
+              </h3>
+            </div>
+            <div className="flex-1 rounded-xl overflow-hidden border border-gray-800/60 bg-[#0a1120]">
+              <DecisionTreeComponent tree={policy.decisionTree} />
+            </div>
+          </Card>
 
-      {/* Action Buttons */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.3 }}
-        className="flex gap-3"
-      >
-        <Button variant="outline" className="border-border text-foreground hover:bg-muted">
-          <Download className="w-4 h-4 mr-2" />
-          Download
-        </Button>
-        <Button variant="outline" className="border-border text-foreground hover:bg-muted">
-          <Share2 className="w-4 h-4 mr-2" />
-          Share
-        </Button>
-      </motion.div>
+          {/* Original Source / Policy Preview Section */}
+          <Card className="p-6 bg-[#0f172a] border-gray-800 rounded-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 bg-gray-800 rounded-lg">
+                  <FileText className="w-4 h-4 text-gray-400" />
+                </div>
+                <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">
+                  Source Document
+                </h3>
+              </div>
+              <Button variant="ghost" size="sm" className="text-xs text-blue-400 hover:text-blue-300 hover:bg-transparent">
+                View Full Text <ChevronRight className="w-3 h-3 ml-1" />
+              </Button>
+            </div>
+
+            <div className="relative rounded-xl border border-gray-800 bg-[#020617] p-4 text-sm text-gray-500 max-h-[250px] overflow-hidden">
+              <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-[#020617] to-transparent pointer-events-none" />
+              {policy.description || policy.title}
+            </div>
+          </Card>
+        </motion.div>
+      </div>
     </div>
   );
 }

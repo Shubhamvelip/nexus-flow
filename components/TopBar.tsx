@@ -1,9 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { Search, Globe, Bell, HelpCircle, RefreshCw } from 'lucide-react';
+import { Search, RefreshCw, User as UserIcon, LogOut } from 'lucide-react';
 import { Input } from '@/components/ui/input';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useAuth } from '@/contexts/AuthContext';
+import { useRouter } from 'next/navigation';
 
 interface TopBarProps {
   title: string;
@@ -14,16 +16,28 @@ export function TopBar({
   title,
   searchPlaceholder = 'Search policies, tasks...',
 }: TopBarProps) {
+  const { user, logout } = useAuth();
+  const router = useRouter();
   const [isSyncing, setIsSyncing] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
 
   const handleSync = async () => {
     setIsSyncing(true);
-    console.log('[v0] Syncing policy data to database...');
-    setTimeout(() => {
-      setIsSyncing(false);
-      console.log('[v0] Sync completed successfully');
-    }, 1500);
+    // Simulate sync
+    setTimeout(() => setIsSyncing(false), 1500);
   };
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      router.push('/');
+    } catch (error) {
+      console.error('Logout failed', error);
+    }
+  };
+
+  const displayName = user?.displayName || user?.email || 'Guest';
+  const initial = displayName.charAt(0).toUpperCase();
 
   return (
     <header className="bg-[#070d1a] border-b border-gray-800 h-14 flex items-center px-6 gap-4">
@@ -46,11 +60,12 @@ export function TopBar({
 
       {/* Actions */}
       <div className="flex items-center gap-1">
+        {/* Sync Button */}
         <motion.button
           whileHover={{ scale: 1.05 }}
           onClick={handleSync}
           disabled={isSyncing}
-          className="p-2 hover:bg-gray-800/60 rounded-xl transition-colors text-gray-500 hover:text-white disabled:opacity-50"
+          className="p-2 hover:bg-gray-800/60 rounded-xl transition-colors text-gray-500 hover:text-white disabled:opacity-50 mr-2"
           title="Sync to database"
         >
           <motion.div
@@ -61,30 +76,57 @@ export function TopBar({
           </motion.div>
         </motion.button>
 
-        <motion.button
-          whileHover={{ scale: 1.05 }}
-          className="p-2 hover:bg-gray-800/60 rounded-xl transition-colors text-gray-500 hover:text-white"
-          title="Language"
-        >
-          <Globe className="w-4 h-4" />
-        </motion.button>
+        {/* User Dropdown */}
+        <div className="relative">
+          <button
+            onClick={() => setShowDropdown(!showDropdown)}
+            className="flex items-center justify-center w-8 h-8 rounded-full bg-green-600 hover:bg-green-700 transition-colors border border-green-500/30 ring-2 ring-transparent focus:ring-green-500/50 outline-none"
+          >
+            <span className="text-white text-xs font-bold">{initial}</span>
+          </button>
 
-        <motion.button
-          whileHover={{ scale: 1.05 }}
-          className="relative p-2 hover:bg-gray-800/60 rounded-xl transition-colors text-gray-500 hover:text-white"
-          title="Notifications"
-        >
-          <Bell className="w-4 h-4" />
-          <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-red-500 rounded-full" />
-        </motion.button>
-
-        <motion.button
-          whileHover={{ scale: 1.05 }}
-          className="p-2 hover:bg-gray-800/60 rounded-xl transition-colors text-gray-500 hover:text-white"
-          title="Help"
-        >
-          <HelpCircle className="w-4 h-4" />
-        </motion.button>
+          <AnimatePresence>
+            {showDropdown && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setShowDropdown(false)}
+                />
+                <motion.div
+                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                  transition={{ duration: 0.15 }}
+                  className="absolute right-0 mt-2 w-56 bg-[#0f172a] border border-gray-800 rounded-xl shadow-xl z-50 overflow-hidden"
+                >
+                  <div className="p-3 border-b border-gray-800/60">
+                    <p className="text-sm font-medium text-white truncate">{displayName}</p>
+                    <p className="text-xs text-gray-500 truncate">{user?.email || 'Guest Account'}</p>
+                  </div>
+                  <div className="p-1.5">
+                    <button
+                      onClick={() => {
+                        setShowDropdown(false);
+                        router.push('/settings');
+                      }}
+                      className="w-full flex items-center gap-2 px-2.5 py-2 text-sm text-gray-400 hover:text-white hover:bg-gray-800/50 rounded-lg transition-colors"
+                    >
+                      <UserIcon className="w-4 h-4" />
+                      Profile Settings
+                    </button>
+                    <button
+                      onClick={handleLogout}
+                      className="w-full flex items-center gap-2 px-2.5 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-colors mt-1"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      Sign out
+                    </button>
+                  </div>
+                </motion.div>
+              </>
+            )}
+          </AnimatePresence>
+        </div>
       </div>
     </header>
   );

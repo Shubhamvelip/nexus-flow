@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generatePolicy } from '@/lib/ai';
-import { createPolicy } from '@/lib/firebase';
 
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
-        const { title, input_text } = body;
+        const { title, input_text, userId } = body;
+
+        if (!userId || typeof userId !== 'string') {
+            return NextResponse.json(
+                { error: 'userId is required and must be a string' },
+                { status: 400 }
+            );
+        }
 
         // Validate input
         if (!title || typeof title !== 'string' || title.trim() === '') {
@@ -24,16 +30,21 @@ export async function POST(request: NextRequest) {
         // 1. Generate structured output via Gemini
         const generated = await generatePolicy(input_text.trim());
 
-        // 2. Save to Firestore
-        const policy = await createPolicy({
+        // 2. Return formatted policy object
+        const policy = {
             title: title.trim(),
             input_text: input_text.trim(),
             workflow: generated.workflow,
             decision_tree: generated.decision_tree,
-            checklist: generated.checklist,
-        });
+            checklist: generated.checklist.map((text, idx) => ({
+                id: `item-${Date.now()}-${idx}`,
+                title: text,
+                completed: false
+            })),
+            userId,
+        };
 
-        return NextResponse.json({ success: true, policy }, { status: 201 });
+        return NextResponse.json({ success: true, policy }, { status: 200 });
     } catch (err) {
         const message = err instanceof Error ? err.message : 'Internal server error';
         console.error('[POST /api/generate]', message);

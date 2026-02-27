@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { CheckCircle2, Circle, ArrowRight, Clock, AlertCircle } from 'lucide-react';
+import { CheckCircle2, Circle, ArrowRight, Clock, AlertCircle, PlayCircle, Layers, Fingerprint, Activity, Zap } from 'lucide-react';
 
 export interface WorkflowStepData {
     id?: string;
@@ -28,6 +28,12 @@ function getStepStatus(step: WorkflowStepData) {
     if (step.status === 'in-progress') return 'in-progress';
     if (step.status === 'skipped') return 'skipped';
     return 'pending';
+}
+
+const STEP_ICONS = [Layers, Activity, Fingerprint, Zap, PlayCircle, CheckCircle2];
+
+function getIconForStep(idx: number) {
+    return STEP_ICONS[idx % STEP_ICONS.length];
 }
 
 export function WorkflowTimeline({ steps, readonly = false }: WorkflowTimelineProps) {
@@ -67,33 +73,30 @@ export function WorkflowTimeline({ steps, readonly = false }: WorkflowTimelinePr
                                 animate={{ scale: 1 }}
                                 transition={{ delay: idx * 0.07 + 0.1 }}
                                 className={`
-                  relative w-8 h-8 rounded-full flex items-center justify-center z-10 border-2 transition-all
+                  relative w-10 h-10 rounded-2xl flex items-center justify-center z-10 border transition-all duration-300
                   ${isCompleted
-                                        ? 'bg-green-500/20 border-green-500 shadow-[0_0_12px_rgba(34,197,94,0.3)]'
+                                        ? 'bg-green-500/10 border-green-500/40 shadow-[0_0_15px_rgba(34,197,94,0.2)] text-green-400 group-hover:bg-green-500/20 group-hover:border-green-500'
                                         : isActive
-                                            ? 'bg-blue-500/20 border-blue-500 shadow-[0_0_12px_rgba(59,130,246,0.3)]'
-                                            : 'bg-gray-900 border-gray-700 group-hover:border-gray-500'
+                                            ? 'bg-blue-500/10 border-blue-500/50 shadow-[0_0_15px_rgba(59,130,246,0.3)] text-blue-400'
+                                            : 'bg-[#0f172a] border-gray-700 text-gray-500 group-hover:border-gray-500 group-hover:text-gray-300 group-hover:shadow-[0_0_15px_rgba(255,255,255,0.05)]'
                                     }
                 `}
                             >
                                 {isCompleted ? (
-                                    <CheckCircle2 className="w-4 h-4 text-green-500" />
-                                ) : isActive ? (
-                                    <motion.div
-                                        animate={{ scale: [1, 1.2, 1] }}
-                                        transition={{ duration: 1.5, repeat: Infinity }}
-                                        className="w-3 h-3 rounded-full bg-blue-500"
-                                    />
+                                    <CheckCircle2 className="w-5 h-5" />
                                 ) : (
-                                    <span className="text-xs font-bold text-gray-400">{idx + 1}</span>
+                                    (() => {
+                                        const Icon = getIconForStep(idx);
+                                        return <Icon className="w-5 h-5" />;
+                                    })()
                                 )}
 
                                 {/* Pulse ring for active */}
                                 {isActive && (
                                     <motion.div
-                                        animate={{ scale: [1, 1.6], opacity: [0.5, 0] }}
-                                        transition={{ duration: 1.2, repeat: Infinity }}
-                                        className="absolute inset-0 rounded-full border-2 border-blue-500"
+                                        animate={{ scale: [1, 1.4], opacity: [0.6, 0] }}
+                                        transition={{ duration: 1.5, repeat: Infinity }}
+                                        className="absolute inset-0 rounded-2xl border border-blue-500"
                                     />
                                 )}
                             </motion.div>
@@ -105,7 +108,7 @@ export function WorkflowTimeline({ steps, readonly = false }: WorkflowTimelinePr
                                     animate={{ scaleY: 1 }}
                                     transition={{ delay: idx * 0.07 + 0.2, duration: 0.4 }}
                                     style={{ transformOrigin: 'top' }}
-                                    className={`w-0.5 flex-1 my-1 min-h-[2rem] ${isCompleted ? 'bg-green-500/40' : 'bg-gray-800'
+                                    className={`w-0.5 flex-1 my-2 min-h-[2.5rem] rounded-full transition-colors duration-300 ${isCompleted ? 'bg-gradient-to-b from-green-500/50 to-green-500/10' : 'bg-gray-800 group-hover:bg-gray-700'
                                         }`}
                                 />
                             )}
@@ -120,16 +123,16 @@ export function WorkflowTimeline({ steps, readonly = false }: WorkflowTimelinePr
                         >
                             <div
                                 className={`
-                  rounded-xl border p-3.5 transition-all
+                  rounded-xl border p-4 transition-all duration-300
                   ${isCompleted
                                         ? 'bg-green-500/5 border-green-500/20'
                                         : isActive
-                                            ? 'bg-blue-500/5 border-blue-500/20'
-                                            : 'bg-[#0a1628] border-gray-800 group-hover:border-gray-700'
+                                            ? 'bg-blue-500/5 border-blue-500/30 shadow-[0_4px_20px_rgba(59,130,246,0.05)]'
+                                            : 'bg-[#0f172a] border-gray-800 group-hover:border-gray-600 group-hover:bg-[#131d36] group-hover:-translate-y-0.5 group-hover:shadow-lg'
                                     }
                 `}
                             >
-                                <div className="flex items-start justify-between gap-2 mb-1">
+                                <div className="flex items-start justify-between gap-2 mb-2">
                                     <p className={`text-sm font-semibold leading-tight ${isCompleted ? 'text-green-400' : isActive ? 'text-blue-400' : 'text-white'
                                         }`}>
                                         {label}

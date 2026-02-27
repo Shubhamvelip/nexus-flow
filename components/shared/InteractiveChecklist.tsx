@@ -1,36 +1,28 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { CheckCircle2, Circle, AlertCircle, Clock, Trophy } from 'lucide-react';
-
-export interface ChecklistItemData {
-    id: string;
-    title?: string;
-    label?: string;   // plain string items from API
-    description?: string;
-    completed?: boolean;
-    status?: 'pending' | 'completed' | 'flagged';
-    order?: number;
-}
+import { CheckCircle2, Circle, AlertCircle, Trophy } from 'lucide-react';
+import { updatePolicyChecklist, PolicyChecklistItem } from '@/lib/firebase';
 
 interface InteractiveChecklistProps {
-    /** Can be an array of objects OR plain strings (from Gemini API) */
-    items: ChecklistItemData[] | string[];
-    /** If true, shows descriptions when available */
+    items: PolicyChecklistItem[] | string[];
     showDescriptions?: boolean;
+    policyId?: string;
+    onProgressChange?: (pct: number) => void;
+    onUpdate?: (items: PolicyChecklistItem[]) => void;
 }
 
-function normalizeItems(raw: ChecklistItemData[] | string[]): ChecklistItemData[] {
+function normalizeItems(raw: PolicyChecklistItem[] | string[]): PolicyChecklistItem[] {
     return raw.map((item, idx) => {
         if (typeof item === 'string') {
-            return { id: `item-${idx}`, title: item, completed: false };
+            return { id: `item-temp-${idx}`, title: item, completed: false };
         }
-        return item;
+        return item; // PolicyChecklistItem
     });
 }
 
-function StatusIcon({ done, flagged }: { done: boolean; flagged: boolean }) {
+function StatusIcon({ done, flagged }: { done: boolean; flagged?: boolean }) {
     if (done) return <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />;
     if (flagged) return <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0" />;
     return <Circle className="w-4 h-4 text-gray-600 flex-shrink-0" />;
@@ -39,22 +31,54 @@ function StatusIcon({ done, flagged }: { done: boolean; flagged: boolean }) {
 export function InteractiveChecklist({
     items,
     showDescriptions = true,
+    policyId,
+    onProgressChange,
+    onUpdate,
 }: InteractiveChecklistProps) {
-    const normalized = normalizeItems(items);
+    const [localItems, setLocalItems] = useState<PolicyChecklistItem[]>([]);
 
-    const [completed, setCompleted] = useState<Set<string>>(
-        new Set(normalized.filter((i) => i.completed).map((i) => i.id))
-    );
+    useEffect(() => {
+        const normalized = normalizeItems(items);
+        setLocalItems(normalized);
+        const doneCount = normalized.filter(i => i.completed).length;
+        const total = normalized.length;
+        const pct = total > 0 ? Math.round((doneCount / total) * 100) : 0;
+        onProgressChange?.(pct);
+    }, [items, onProgressChange]);
 
-    const toggle = (id: string) => {
-        setCompleted((prev) => {
-            const next = new Set(prev);
-            next.has(id) ? next.delete(id) : next.add(id);
-            return next;
+    const toggle = async (id: string) => {
+        let updatedItems: PolicyChecklistItem[] = [];
+        let newPct = 0;
+
+        setLocalItems((prev) => {
+            updatedItems = prev.map(item =>
+                item.id === id ? { ...item, completed: !item.completed } : item
+            );
+
+            const doneCount = updatedItems.filter(i => i.completed).length;
+            const total = updatedItems.length;
+            newPct = total > 0 ? Math.round((doneCount / total) * 100) : 0;
+            return updatedItems;
         });
+
+        // Inform parent of new progress instantly
+        setTimeout(() => {
+            onProgressChange?.(newPct);
+            onUpdate?.(updatedItems);
+        }, 0);
+
+        if (policyId && updatedItems.length > 0) {
+            try {
+                // Ensure no dangling local properties leak to Firestore, though we only have id, title, completed
+                await updatePolicyChecklist(policyId, updatedItems);
+            } catch (error) {
+                console.error("Optimistic update failed:", error);
+                // Optionally revert local state here
+            }
+        }
     };
 
-    if (!normalized || normalized.length === 0) {
+    if (!localItems || localItems.length === 0) {
         return (
             <div className="flex flex-col items-center justify-center py-12 gap-3">
                 <div className="w-12 h-12 rounded-2xl bg-gray-800/60 border border-gray-700 flex items-center justify-center">
@@ -65,10 +89,10 @@ export function InteractiveChecklist({
         );
     }
 
-    const doneCount = completed.size;
-    const total = normalized.length;
-    const pct = Math.round((doneCount / total) * 100);
-    const allDone = doneCount === total;
+    const doneCount = localItems.filter(i => i.completed).length;
+    const total = localItems.length;
+    const pct = total > 0 ? Math.round((doneCount / total) * 100) : 0;
+    const allDone = total > 0 && doneCount === total;
 
     return (
         <div className="space-y-4">
@@ -112,10 +136,10 @@ export function InteractiveChecklist({
 
                 {/* Segment dots */}
                 <div className="flex gap-1">
-                    {normalized.map((item) => (
+                    {localItems.map((item) => (
                         <motion.div
                             key={item.id}
-                            animate={{ backgroundColor: completed.has(item.id) ? 'rgb(34,197,94)' : 'rgb(31,41,55)' }}
+                            animate={{ backgroundColor: item.completed ? 'rgb(34,197,94)' : 'rgb(31,41,55)' }}
                             transition={{ duration: 0.3 }}
                             className="flex-1 h-1 rounded-full"
                         />
@@ -125,10 +149,9 @@ export function InteractiveChecklist({
 
             {/* Items */}
             <div className="space-y-2">
-                {normalized.map((item, idx) => {
-                    const isDone = completed.has(item.id);
-                    const isFlagged = !isDone && item.status === 'flagged';
-                    const label = item.title ?? item.label ?? `Item ${idx + 1}`;
+                {localItems.map((item, idx) => {
+                    const isDone = item.completed;
+                    const label = item.title ?? `Item ${idx + 1}`;
 
                     return (
                         <motion.button
@@ -143,9 +166,7 @@ export function InteractiveChecklist({
                 w-full text-left flex items-start gap-3 p-3.5 rounded-xl border transition-all
                 ${isDone
                                     ? 'bg-green-500/8 border-green-500/25 shadow-[inset_0_0_20px_rgba(34,197,94,0.04)]'
-                                    : isFlagged
-                                        ? 'bg-amber-500/5 border-amber-500/20'
-                                        : 'bg-[#080f1f] border-gray-800 hover:border-gray-600 hover:bg-[#0d1830]'
+                                    : 'bg-[#080f1f] border-gray-800 hover:border-gray-600 hover:bg-[#0d1830]'
                                 }
               `}
                         >
@@ -153,7 +174,7 @@ export function InteractiveChecklist({
                                 animate={{ rotate: isDone ? 0 : 0 }}
                                 transition={{ duration: 0.2 }}
                             >
-                                <StatusIcon done={isDone} flagged={isFlagged} />
+                                <StatusIcon done={isDone} />
                             </motion.div>
 
                             <div className="flex-1 min-w-0">
@@ -161,16 +182,7 @@ export function InteractiveChecklist({
                                     }`}>
                                     {label}
                                 </p>
-                                {showDescriptions && item.description && (
-                                    <p className="text-xs text-gray-600 mt-0.5 leading-relaxed">{item.description}</p>
-                                )}
                             </div>
-
-                            {isFlagged && (
-                                <span className="text-xs font-semibold text-amber-400 border border-amber-500/30 rounded px-2 py-0.5 flex-shrink-0">
-                                    Flagged
-                                </span>
-                            )}
 
                             {isDone && (
                                 <motion.div

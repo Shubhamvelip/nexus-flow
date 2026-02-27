@@ -21,11 +21,10 @@ import {
 } from 'lucide-react';
 import { MainLayout } from '@/components/shared/MainLayout';
 import type { DashboardPolicy, DashboardStats } from '@/lib/data-service';
-
-interface DashboardClientProps {
-  policies: DashboardPolicy[];
-  stats: DashboardStats;
-}
+import { fetchRecentPolicies, getCompletionStats } from '@/lib/data-service';
+import { useAuth } from '@/contexts/AuthContext';
+import { useState, useEffect } from 'react';
+import { Loader2 } from 'lucide-react';
 
 // ── Tips of the day ───────────────────────────────────────────────────────────
 
@@ -174,8 +173,48 @@ function PolicyCard({ policy, idx }: { policy: DashboardPolicy; idx: number }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function DashboardClient({ policies, stats }: DashboardClientProps) {
+export function DashboardClient() {
   const router = useRouter();
+  const { user } = useAuth();
+
+  const [policies, setPolicies] = useState<DashboardPolicy[]>([]);
+  const [stats, setStats] = useState<DashboardStats>({
+    totalPolicies: 0,
+    completedTasks: 0,
+    pendingTasks: 0,
+  });
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadData() {
+      if (!user?.uid) return;
+      setIsLoading(true);
+      try {
+        const [fetchedPolicies, fetchedStats] = await Promise.all([
+          fetchRecentPolicies(user.uid, 5),
+          getCompletionStats(user.uid),
+        ]);
+        setPolicies(fetchedPolicies);
+        setStats(fetchedStats);
+      } catch (error) {
+        console.error("Failed to load dashboard data", error);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadData();
+  }, [user?.uid]);
+
+  if (isLoading) {
+    return (
+      <MainLayout title="Dashboard">
+        <div className="flex items-center justify-center h-64 text-sm text-gray-500 gap-2">
+          <Loader2 className="w-5 h-5 animate-spin" />
+          Loading dashboard…
+        </div>
+      </MainLayout>
+    );
+  }
 
   return (
     <MainLayout title="Dashboard">

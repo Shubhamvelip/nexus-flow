@@ -11,9 +11,11 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { motion } from 'framer-motion';
-import { mockUserProfile } from '@/lib/mockData';
+import { useAuth } from '@/contexts/AuthContext';
 
 export function SettingsContent() {
+  const { user } = useAuth();
+  const displayName = user?.displayName || user?.email || 'Guest';
   return (
     <div className="space-y-6 max-w-2xl">
       {/* Header */}
@@ -44,27 +46,30 @@ export function SettingsContent() {
               </label>
               <Input
                 type="text"
-                defaultValue={mockUserProfile.name}
+                defaultValue={displayName}
+                readOnly
                 className="bg-input border-border text-foreground"
               />
             </div>
             <div>
               <label className="text-sm font-medium text-foreground block mb-2">
-                Role
+                UID
               </label>
               <Input
                 type="text"
-                defaultValue={mockUserProfile.role}
+                defaultValue={user?.uid || ''}
+                readOnly
                 className="bg-input border-border text-foreground"
               />
             </div>
             <div>
               <label className="text-sm font-medium text-foreground block mb-2">
-                Department
+                Email
               </label>
               <Input
                 type="text"
-                defaultValue={mockUserProfile.department}
+                defaultValue={user?.email || ''}
+                readOnly
                 className="bg-input border-border text-foreground"
               />
             </div>

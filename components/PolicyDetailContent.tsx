@@ -21,6 +21,9 @@ import {
 import { WorkflowTimeline } from '@/components/shared/WorkflowTimeline';
 import { VisualDecisionTree } from '@/components/shared/VisualDecisionTree';
 import { InteractiveChecklist } from '@/components/shared/InteractiveChecklist';
+import { PolicyChecklistItem, PolicyDecisionTree } from '@/lib/firebase';
+import { exportPolicyToPDF } from '@/lib/export';
+import { toast } from 'sonner';
 
 // ── Types for Firestore policy document ─────────────────────────────────────
 
@@ -34,7 +37,7 @@ interface PolicyDoc {
     yes: unknown;
     no: unknown;
   };
-  checklist: string[];
+  checklist: PolicyChecklistItem[];
   created_at: { seconds?: number } | null;
 }
 
@@ -71,8 +74,8 @@ function TabBtn({
     <button
       onClick={onClick}
       className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all ${active
-          ? 'bg-green-600/20 text-green-400 border border-green-500/30'
-          : 'text-gray-500 hover:text-gray-300 border border-transparent hover:border-gray-700'
+        ? 'bg-green-600/20 text-green-400 border border-green-500/30'
+        : 'text-gray-500 hover:text-gray-300 border border-transparent hover:border-gray-700'
         }`}
     >
       {icon}
@@ -142,6 +145,18 @@ export function PolicyDetailContent({ policyId }: PolicyDetailContentProps) {
     );
   }
 
+  // ── Share logic ────────────────────────────────────────────────────────────
+  const handleShare = async () => {
+    if (!policy) return;
+    const url = `${window.location.origin}/policies/${policyId}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("Link copied");
+    } catch (err) {
+      toast.error("Failed to copy link");
+    }
+  };
+
   const steps = policy.workflow ?? [];
   const checklist = policy.checklist ?? [];
 
@@ -178,6 +193,13 @@ export function PolicyDetailContent({ policyId }: PolicyDetailContentProps) {
           {/* Action buttons */}
           <div className="flex gap-2 flex-shrink-0">
             <motion.button
+              onClick={() => policy && exportPolicyToPDF({
+                title: policy.title,
+                description: policy.input_text || '',
+                workflow: policy.workflow,
+                decisionTree: policy.decision_tree as unknown as PolicyDecisionTree,
+                checklist: policy.checklist
+              })}
               whileHover={{ scale: 1.06 }}
               whileTap={{ scale: 0.94 }}
               title="Export PDF"
@@ -186,6 +208,7 @@ export function PolicyDetailContent({ policyId }: PolicyDetailContentProps) {
               <Download className="w-4 h-4" />
             </motion.button>
             <motion.button
+              onClick={handleShare}
               whileHover={{ scale: 1.06 }}
               whileTap={{ scale: 0.94 }}
               title="Share"
@@ -275,9 +298,11 @@ export function PolicyDetailContent({ policyId }: PolicyDetailContentProps) {
             <h2 className="text-sm font-semibold text-white">Checklist</h2>
           </div>
 
-          <ProgressAwareChecklist
+          <InteractiveChecklist
             items={checklist}
             onProgressChange={setChecklistProgress}
+            onUpdate={(updatedChecklist) => setPolicy(prev => prev ? { ...prev, checklist: updatedChecklist } : null)}
+            policyId={policyId}
           />
         </motion.div>
 
@@ -333,6 +358,13 @@ export function PolicyDetailContent({ policyId }: PolicyDetailContentProps) {
           Mark Complete
         </motion.button>
         <motion.button
+          onClick={() => policy && exportPolicyToPDF({
+            title: policy.title,
+            description: policy.input_text || '',
+            workflow: policy.workflow,
+            decisionTree: policy.decision_tree as unknown as PolicyDecisionTree,
+            checklist: policy.checklist
+          })}
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
           className="flex items-center gap-2 border border-gray-700 hover:border-gray-500 text-white rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors"
@@ -358,108 +390,3 @@ export function PolicyDetailContent({ policyId }: PolicyDetailContentProps) {
   );
 }
 
-// ── Helper wrapper to track checklist progress externally ─────────────────────
-
-function ProgressAwareChecklist({
-  items,
-  onProgressChange,
-}: {
-  items: string[];
-  onProgressChange: (pct: number) => void;
-}) {
-  const [completed, setCompleted] = useState<Set<number>>(new Set());
-
-  const toggle = (idx: number) => {
-    setCompleted((prev) => {
-      const next = new Set(prev);
-      next.has(idx) ? next.delete(idx) : next.add(idx);
-      const pct = items.length > 0 ? Math.round((next.size / items.length) * 100) : 0;
-      onProgressChange(pct);
-      return next;
-    });
-  };
-
-  if (!items || items.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center py-10 gap-3">
-        <CheckCircle2 className="w-8 h-8 text-gray-700" />
-        <p className="text-sm text-gray-600">No checklist items.</p>
-      </div>
-    );
-  }
-
-  const pct = Math.round((completed.size / items.length) * 100);
-
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between text-xs">
-        <span className="text-gray-500">{completed.size}/{items.length} done</span>
-        <span className={`font-bold tabular-nums ${pct === 100 ? 'text-green-400' : 'text-white'}`}>{pct}%</span>
-      </div>
-
-      <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
-        <motion.div
-          className="h-full bg-gradient-to-r from-green-600 to-green-400 rounded-full"
-          animate={{ width: `${pct}%` }}
-          transition={{ duration: 0.4 }}
-        />
-      </div>
-
-      <div className="flex gap-0.5 mb-3">
-        {items.map((_, i) => (
-          <motion.div
-            key={i}
-            animate={{ backgroundColor: completed.has(i) ? 'rgb(34,197,94)' : 'rgb(31,41,55)' }}
-            transition={{ duration: 0.25 }}
-            className="flex-1 h-0.5 rounded-full"
-          />
-        ))}
-      </div>
-
-      <div className="space-y-1.5">
-        {items.map((item, idx) => {
-          const isDone = completed.has(idx);
-          return (
-            <motion.button
-              key={idx}
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: idx * 0.04 }}
-              whileHover={{ x: 2 }}
-              onClick={() => toggle(idx)}
-              className={`w-full text-left flex items-center gap-3 p-3 rounded-xl border transition-all text-xs ${isDone
-                  ? 'bg-green-500/8 border-green-500/20 text-gray-500'
-                  : 'bg-[#080f1f] border-gray-800 hover:border-gray-600 text-white'
-                }`}
-            >
-              <motion.div
-                animate={{ scale: isDone ? [1, 1.3, 1] : 1 }}
-                transition={{ duration: 0.2 }}
-                className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${isDone ? 'bg-green-500 border-green-500' : 'border-gray-600'
-                  }`}
-              >
-                {isDone && (
-                  <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }}>
-                    <CheckCircle2 className="w-3 h-3 text-white" />
-                  </motion.div>
-                )}
-              </motion.div>
-              <span className={isDone ? 'line-through' : ''}>{item}</span>
-            </motion.button>
-          );
-        })}
-      </div>
-
-      {pct === 100 && (
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="flex items-center gap-2 justify-center py-3 bg-green-500/10 border border-green-500/25 rounded-xl"
-        >
-          <Trophy className="w-4 h-4 text-green-500" />
-          <span className="text-xs font-bold text-green-400">All done!</span>
-        </motion.div>
-      )}
-    </div>
-  );
-}

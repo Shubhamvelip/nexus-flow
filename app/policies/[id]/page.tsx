@@ -9,7 +9,7 @@ export default async function PolicyDetailPage({ params }: PageProps) {
   const { id } = await params;
 
   return (
-    <MainLayout title="Policy Details">
+    <MainLayout title="Policy Details" requireAuth={false}>
       <PolicyDetailContent policyId={id} />
     </MainLayout>
   );

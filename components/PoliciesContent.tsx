@@ -3,12 +3,44 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { Plus, ArrowRight, FileText, Zap } from 'lucide-react';
+import { Plus, ArrowRight, FileText, Zap, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { mockPolicies } from '@/lib/mockData';
+import { useState, useEffect } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
+import { fetchAllPolicies } from '@/lib/data-service';
+import type { DashboardPolicy } from '@/lib/data-service';
 
 export function PoliciesContent() {
   const router = useRouter();
+  const { user } = useAuth();
+
+  const [policies, setPolicies] = useState<DashboardPolicy[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadPolicies() {
+      if (!user?.uid) return;
+      setIsLoading(true);
+      try {
+        const data = await fetchAllPolicies(user.uid);
+        setPolicies(data);
+      } catch (error) {
+        console.error("Failed to load policies", error);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadPolicies();
+  }, [user?.uid]);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64 text-sm text-gray-500 gap-2">
+        <Loader2 className="w-5 h-5 animate-spin" />
+        Loading policies…
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -38,9 +70,9 @@ export function PoliciesContent() {
         animate={{ opacity: 1 }}
         transition={{ duration: 0.5, delay: 0.1 }}
       >
-        {mockPolicies.length > 0 ? (
+        {policies.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {mockPolicies.map((policy, index) => (
+            {policies.map((policy, index) => (
               <motion.div
                 key={policy.id}
                 initial={{ opacity: 0, y: 20 }}
@@ -54,10 +86,10 @@ export function PoliciesContent() {
                     <div className="mb-3">
                       <span
                         className={`text-xs px-2.5 py-1 rounded-lg font-medium ${policy.status === 'active'
-                            ? 'bg-green-500/20 text-green-400'
-                            : policy.status === 'draft'
-                              ? 'bg-amber-500/20 text-amber-400'
-                              : 'bg-slate-500/20 text-slate-400'
+                          ? 'bg-green-500/20 text-green-400'
+                          : policy.status === 'draft'
+                            ? 'bg-amber-500/20 text-amber-400'
+                            : 'bg-slate-500/20 text-slate-400'
                           }`}
                       >
                         {policy.status.charAt(0).toUpperCase() + policy.status.slice(1)}
@@ -76,13 +108,13 @@ export function PoliciesContent() {
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
                         <span className="text-xs text-gray-500">Progress</span>
-                        <span className="text-xs font-semibold text-white">{policy.progress}%</span>
+                        <span className="text-xs font-semibold text-white">{policy.completionPercentage}%</span>
                       </div>
                       <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
                         <motion.div
                           className="h-full bg-green-500 rounded-full"
                           initial={{ width: 0 }}
-                          animate={{ width: `${policy.progress}%` }}
+                          animate={{ width: `${policy.completionPercentage}%` }}
                           transition={{ duration: 0.6, ease: 'easeOut' }}
                         />
                       </div>
@@ -91,7 +123,7 @@ export function PoliciesContent() {
                     {/* Footer */}
                     <div className="mt-4 pt-4 border-t border-gray-800 flex items-center justify-between">
                       <span className="text-xs text-gray-600">
-                        Updated {new Date(policy.updatedAt).toLocaleDateString()}
+                        Generated {policy.createdAt}
                       </span>
                       <ArrowRight className="w-3.5 h-3.5 text-gray-600 group-hover:text-green-400 transition-colors" />
                     </div>

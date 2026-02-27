@@ -1,4 +1,5 @@
 import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
+import { getAuth, Auth } from 'firebase/auth';
 import {
     getFirestore,
     collection,
@@ -10,17 +11,19 @@ import {
     Timestamp,
     query,
     orderBy,
+    where,
+    updateDoc,
 } from 'firebase/firestore';
 
 // ── Firebase config ─────────────────────────────────────────────────────────
 
 const firebaseConfig = {
-    apiKey: process.env.FIREBASE_API_KEY,
-    authDomain: process.env.FIREBASE_AUTH_DOMAIN,
-    projectId: process.env.FIREBASE_PROJECT_ID,
-    storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
-    messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
-    appId: process.env.FIREBASE_APP_ID,
+    apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+    authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+    storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+    appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
 // Singleton initialisation — safe for Next.js hot-reload
@@ -29,6 +32,15 @@ let db: Firestore;
 
 function getFirebaseApp(): FirebaseApp {
     if (!app) {
+        console.log("Firebase Config Initialization:", {
+            ...firebaseConfig,
+            apiKey: firebaseConfig.apiKey ? "[HIDDEN]" : undefined
+        });
+
+        if (!firebaseConfig.apiKey) {
+            throw new Error("Firebase API key is undefined. Check NEXT_PUBLIC_FIREBASE_API_KEY.");
+        }
+
         app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
     }
     return app;
@@ -39,6 +51,15 @@ export function getDb(): Firestore {
         db = getFirestore(getFirebaseApp());
     }
     return db;
+}
+
+let auth: Auth;
+
+export function getFirebaseAuth(): Auth {
+    if (!auth) {
+        auth = getAuth(getFirebaseApp());
+    }
+    return auth;
 }
 
 // ── Policy schema ────────────────────────────────────────────────────────────
@@ -54,14 +75,21 @@ export interface PolicyDecisionTree {
     no: PolicyDecisionTree | { action: string };
 }
 
+export interface PolicyChecklistItem {
+    id: string;
+    title: string;
+    completed: boolean;
+}
+
 export interface PolicyDocument {
     id?: string;
     title: string;
     input_text: string;
     workflow: PolicyWorkflowStep[];
     decision_tree: PolicyDecisionTree;
-    checklist: string[];
+    checklist: PolicyChecklistItem[];
     created_at: Timestamp | Date;
+    userId: string;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -100,9 +128,13 @@ export async function createPolicy(
 /**
  * Fetch all policies, ordered by newest first.
  */
-export async function getPolicies(): Promise<PolicyDocument[]> {
+export async function getPolicies(userId?: string): Promise<PolicyDocument[]> {
     const db = getDb();
-    const q = query(collection(db, COLLECTION), orderBy('created_at', 'desc'));
+    let q = query(collection(db, COLLECTION), orderBy('created_at', 'desc'));
+
+    if (userId) {
+        q = query(collection(db, COLLECTION), where('userId', '==', userId), orderBy('created_at', 'desc'));
+    }
 
     try {
         const snapshot = await getDocs(q);
@@ -135,5 +167,19 @@ export async function getPolicyById(id: string): Promise<PolicyDocument | null> 
     } catch (error) {
         console.error("Firestore read failed (getPolicyById):", error);
         return null; // Return null if fetching fails
+    }
+}
+
+/**
+ * Update the checklist for a given policy document.
+ */
+export async function updatePolicyChecklist(policyId: string, checklist: PolicyChecklistItem[]): Promise<void> {
+    const db = getDb();
+    const docRef = doc(db, COLLECTION, policyId);
+    try {
+        await updateDoc(docRef, { checklist });
+    } catch (error) {
+        console.error("Failed to update checklist in Firestore:", error);
+        throw error;
     }
 }

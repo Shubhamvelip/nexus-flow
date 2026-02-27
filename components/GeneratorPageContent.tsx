@@ -17,26 +17,24 @@ import {
   Loader2,
   Sparkles,
   ClipboardList,
+  Download,
+  Share2,
+  Save,
+  Clock,
 } from 'lucide-react'
+import { useAuth } from '@/contexts/AuthContext'
+import { toast } from 'sonner'
+import { exportPolicyToPDF } from '@/lib/export'
 
-
+import { PolicyChecklistItem, PolicyDecisionTree, PolicyWorkflowStep } from '@/lib/firebase'
 
 // ─── Types for API response ───────────────────────────────────────────────────
-interface WorkflowStep {
-  step: string;
-  description: string;
-}
-
-interface DecisionTree {
-  question: string;
-  yes: DecisionTree | { action: string };
-  no: DecisionTree | { action: string };
-}
 
 interface GeneratedOutput {
-  workflow: WorkflowStep[];
-  decision_tree: DecisionTree;
-  checklist: string[];
+  id: string;
+  workflow: PolicyWorkflowStep[];
+  decision_tree: PolicyDecisionTree;
+  checklist: PolicyChecklistItem[];
 }
 
 
@@ -44,6 +42,7 @@ interface GeneratedOutput {
 export function GeneratorPageContent() {
   // Form state
   const [title, setTitle] = useState('')
+  const [pasteText, setPasteText] = useState('')
   const [description, setDescription] = useState('')
   const [notes, setNotes] = useState('')
   const [useAI, setUseAI] = useState(true)
@@ -51,12 +50,12 @@ export function GeneratorPageContent() {
   const [isDragActive, setIsDragActive] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
-  // Output state
   const [isGenerating, setIsGenerating] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const [hasSaved, setHasSaved] = useState(false)
   const [output, setOutput] = useState<GeneratedOutput | null>(null)
   const [apiError, setApiError] = useState<string | null>(null)
-
-
+  const { user } = useAuth()
 
   // ── Handlers ────────────────────────────────────────────────────────────────
   const handleDrag = (e: React.DragEvent) => {
@@ -83,10 +82,12 @@ export function GeneratorPageContent() {
     setIsGenerating(true)
     setApiError(null)
     setOutput(null)
+    setHasSaved(false)
 
     // Build input_text from form fields
     const inputParts = [
       `Title: ${title.trim()}`,
+      pasteText.trim() ? `Policy Text:\n${pasteText.trim()}` : '',
       description.trim() ? `Description: ${description.trim()}` : '',
       notes.trim() ? `Context/Notes: ${notes.trim()}` : '',
     ].filter(Boolean)
@@ -96,7 +97,7 @@ export function GeneratorPageContent() {
       const res = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: title.trim(), input_text }),
+        body: JSON.stringify({ title: title.trim(), input_text, userId: user?.uid }),
       })
 
       const data = await res.json()
@@ -107,6 +108,7 @@ export function GeneratorPageContent() {
 
       const policy = data.policy
       setOutput({
+        id: policy.id,
         workflow: policy.workflow ?? [],
         decision_tree: policy.decision_tree ?? { question: '', yes: { action: '' }, no: { action: '' } },
         checklist: policy.checklist ?? [],
@@ -121,16 +123,76 @@ export function GeneratorPageContent() {
   }
 
 
+  const handleSave = async () => {
+    if (!output || !user?.uid || hasSaved) return;
+    setIsSaving(true);
+    try {
+      // Build input_text from form fields
+      const inputParts = [
+        `Title: ${title.trim()}`,
+        pasteText.trim() ? `Policy Text:\n${pasteText.trim()}` : '',
+        description.trim() ? `Description: ${description.trim()}` : '',
+        notes.trim() ? `Context/Notes: ${notes.trim()}` : '',
+      ].filter(Boolean)
+      const input_text = inputParts.join('\n\n')
+
+      const res = await fetch('/api/policies', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: title.trim(),
+          input_text,
+          workflow: output.workflow,
+          decision_tree: output.decision_tree,
+          checklist: output.checklist,
+          userId: user.uid,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to save policy');
+
+      setHasSaved(true);
+      toast.success('Policy saved successfully');
+
+      // Update local output with the real DB id
+      if (data.policy?.id) {
+        setOutput(prev => prev ? { ...prev, id: data.policy.id } : null);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error saving policy';
+      toast.error(msg);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleShare = async () => {
+    if (!output?.id || !hasSaved) {
+      toast.error("Please save the policy before sharing");
+      return;
+    }
+    const url = `${window.location.origin}/policies/${output.id}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("Link copied");
+    } catch (err) {
+      toast.error("Failed to copy link");
+    }
+  };
+
   const canGenerate = title.trim().length > 0
   const generated = output !== null
+
+  const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <MainLayout title="Policy Generator">
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full">
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 h-full min-h-[calc(100vh-10rem)]">
         {/* ── LEFT: INPUT FORM ───────────────────────────────────────────── */}
-        <div className="space-y-4">
+        <div className="space-y-4 lg:col-span-2 flex flex-col">
           {/* Header label */}
           <div className="flex items-center gap-2 mb-1">
             <ClipboardList className="w-4 h-4 text-green-500" />
@@ -152,6 +214,20 @@ export function GeneratorPageContent() {
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 className="w-full bg-[#020617] border border-gray-800 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-green-500/50 transition-colors"
+              />
+            </div>
+
+            {/* Paste Policy Text */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
+                Paste Policy Text
+              </label>
+              <textarea
+                placeholder="Paste full government policy document here..."
+                value={pasteText}
+                onChange={(e) => setPasteText(e.target.value)}
+                rows={8}
+                className="w-full bg-[#020617] border border-gray-800 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-green-500/50 transition-colors resize-none"
               />
             </div>
 
@@ -285,7 +361,7 @@ export function GeneratorPageContent() {
             ) : (
               <>
                 <Zap className="w-4 h-4" />
-                Generate Workflow
+                Generate Workflow with AI
               </>
             )}
           </motion.button>
@@ -298,12 +374,57 @@ export function GeneratorPageContent() {
         </div>
 
         {/* ── RIGHT: OUTPUT PANEL ────────────────────────────────────────── */}
-        <div className="space-y-4">
-          <div className="flex items-center gap-2 mb-1">
-            <Sparkles className="w-4 h-4 text-green-500" />
-            <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
-              Generated Output
-            </span>
+        <div className="space-y-4 lg:col-span-3 flex flex-col h-full">
+          <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-green-500" />
+              <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
+                Generated Output
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleShare}
+                disabled={!generated || isGenerating}
+                className="p-2 rounded-xl bg-[#020617] border border-gray-800 hover:border-gray-600 text-gray-400 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Share"
+              >
+                <Share2 className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => output && exportPolicyToPDF({
+                  title,
+                  description,
+                  workflow: output.workflow,
+                  decisionTree: output.decision_tree,
+                  checklist: output.checklist,
+                })}
+                disabled={!generated || isGenerating}
+                className="flex items-center gap-2 px-3 py-2 rounded-xl bg-[#020617] border border-gray-800 hover:border-gray-600 text-gray-400 hover:text-white transition-colors text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Export as PDF"
+              >
+                <Download className="w-4 h-4" />
+                Export
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={!generated || isGenerating || isSaving || hasSaved || !user}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all text-xs font-semibold shadow-lg ${hasSaved
+                  ? 'bg-gray-800 text-green-400 border border-green-500/20 shadow-none'
+                  : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-900/20 disabled:opacity-50 disabled:hover:bg-blue-600 disabled:cursor-not-allowed'
+                  }`}
+              >
+                {isSaving ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : hasSaved ? (
+                  <CheckCircle2 className="w-4 h-4" />
+                ) : (
+                  <Save className="w-4 h-4" />
+                )}
+                {isSaving ? 'Saving…' : hasSaved ? 'Saved' : 'Save Policy'}
+              </button>
+            </div>
           </div>
 
           <AnimatePresence mode="wait">
@@ -314,7 +435,7 @@ export function GeneratorPageContent() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="bg-[#0f172a] border border-gray-800 rounded-2xl flex flex-col items-center justify-center py-24 gap-5"
+                className="bg-[#0f172a] border border-gray-800 rounded-2xl flex flex-col items-center justify-center flex-1 min-h-[400px] gap-5"
               >
                 <div className="relative">
                   <div className="w-14 h-14 rounded-2xl bg-green-500/10 border border-green-500/20 flex items-center justify-center">
@@ -346,7 +467,7 @@ export function GeneratorPageContent() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="bg-[#0f172a] border border-red-500/20 rounded-2xl flex flex-col items-center justify-center py-16 gap-4 text-center px-6"
+                className="bg-[#0f172a] border border-red-500/20 rounded-2xl flex flex-col items-center justify-center flex-1 min-h-[400px] gap-4 text-center px-6"
               >
                 <div className="w-12 h-12 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center">
                   <span className="text-xl">⚠️</span>
@@ -370,7 +491,7 @@ export function GeneratorPageContent() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="bg-[#0f172a] border border-gray-800 rounded-2xl flex flex-col items-center justify-center py-24 gap-4"
+                className="bg-[#0f172a] border border-gray-800 rounded-2xl flex flex-col items-center justify-center flex-1 min-h-[400px] gap-4"
               >
                 <motion.div
                   animate={{ scale: [0.95, 1, 0.95] }}
@@ -408,57 +529,63 @@ export function GeneratorPageContent() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.4 }}
               >
-                {/* Success banner */}
-                <div className="flex items-center gap-2 mb-3 px-1">
-                  <CheckCircle2 className="w-4 h-4 text-green-500" />
-                  <span className="text-xs text-green-400 font-medium">
-                    Workflow generated for &quot;{title}&quot;
-                  </span>
-                  <button
-                    onClick={() => {
-                      setOutput(null)
-                      setApiError(null)
-                      setTitle('')
-                      setDescription('')
-                      setNotes('')
-                      setPdfFile(null)
-                    }}
-                    className="ml-auto text-xs text-gray-600 hover:text-gray-400 transition-colors"
-                  >
-                    Reset
-                  </button>
+                {/* Header Section */}
+                <div className="flex flex-col gap-4 mb-6 pb-4 border-b border-gray-800">
+                  <div className="flex items-start justify-between">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 rounded-md bg-green-500/10 border border-green-500/20 text-[10px] font-bold text-green-400 uppercase tracking-wider">
+                          Generated
+                        </span>
+                        <div className="flex items-center gap-1 text-[11px] text-gray-500">
+                          <Clock className="w-3 h-3" />
+                          {timestamp}
+                        </div>
+                      </div>
+                      <h2 className="text-xl font-semibold text-white leading-tight">
+                        {title}
+                      </h2>
+                    </div>
+
+                  </div>
                 </div>
 
 
                 <Tabs defaultValue="workflow" className="w-full">
-                  <TabsList className="grid w-full grid-cols-3 bg-[#0f172a] border border-gray-800 rounded-xl p-1 mb-4">
+                  <TabsList className="grid w-full grid-cols-3 bg-[#0f172a] border border-gray-800 rounded-xl p-1 mb-6 relative">
                     <TabsTrigger
                       value="workflow"
-                      className="rounded-lg text-xs data-[state=active]:bg-green-600/20 data-[state=active]:text-green-400"
+                      className="rounded-lg text-xs z-10 data-[state=active]:text-white transition-colors py-2"
                     >
-                      <Zap className="w-3 h-3 mr-1.5" />
+                      <Zap className="w-3.5 h-3.5 mr-2" />
                       Workflow
                     </TabsTrigger>
                     <TabsTrigger
                       value="tree"
-                      className="rounded-lg text-xs data-[state=active]:bg-green-600/20 data-[state=active]:text-green-400"
+                      className="rounded-lg text-xs z-10 data-[state=active]:text-white transition-colors py-2"
                     >
-                      <GitBranch className="w-3 h-3 mr-1.5" />
+                      <GitBranch className="w-3.5 h-3.5 mr-2" />
                       Decision Tree
                     </TabsTrigger>
                     <TabsTrigger
                       value="checklist"
-                      className="rounded-lg text-xs data-[state=active]:bg-green-600/20 data-[state=active]:text-green-400"
+                      className="rounded-lg text-xs z-10 data-[state=active]:text-white transition-colors py-2"
                     >
-                      <CheckCircle2 className="w-3 h-3 mr-1.5" />
+                      <CheckCircle2 className="w-3.5 h-3.5 mr-2" />
                       Checklist
                     </TabsTrigger>
                   </TabsList>
 
                   {/* ── TAB 1: Workflow ────────────────────────────────── */}
-                  <TabsContent value="workflow">
-                    <div className="bg-[#0f172a] border border-gray-800 rounded-2xl p-5">
-                      <div className="flex items-center gap-2 mb-5">
+                  <TabsContent value="workflow" className="mt-0 outline-none">
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -10 }}
+                      transition={{ duration: 0.3 }}
+                      className="bg-[#0f172a] border border-gray-800 rounded-2xl p-6"
+                    >
+                      <div className="flex items-center gap-3 mb-6 pb-4 border-b border-gray-800/60">
                         <div className="p-1.5 bg-green-500/10 rounded-lg">
                           <Zap className="w-4 h-4 text-green-500" />
                         </div>
@@ -466,15 +593,21 @@ export function GeneratorPageContent() {
                         <span className="ml-auto text-xs text-gray-600">{output?.workflow.length ?? 0} steps</span>
                       </div>
                       <WorkflowTimeline steps={output?.workflow ?? []} />
-                    </div>
+                    </motion.div>
                   </TabsContent>
 
 
 
                   {/* ── TAB 2: Decision Tree ────────────────────────────── */}
-                  <TabsContent value="tree">
-                    <div className="bg-[#0f172a] border border-gray-800 rounded-2xl p-5 space-y-4">
-                      <div className="flex items-center gap-2">
+                  <TabsContent value="tree" className="mt-0 outline-none">
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -10 }}
+                      transition={{ duration: 0.3 }}
+                      className="bg-[#0f172a] border border-gray-800 rounded-2xl p-6 space-y-4"
+                    >
+                      <div className="flex items-center gap-3 pb-4 border-b border-gray-800/60">
                         <div className="p-1.5 bg-green-500/10 rounded-lg">
                           <GitBranch className="w-4 h-4 text-green-500" />
                         </div>
@@ -482,22 +615,32 @@ export function GeneratorPageContent() {
                         <span className="ml-auto text-xs text-gray-600">Interactive — click to expand</span>
                       </div>
                       <VisualDecisionTree tree={output?.decision_tree ?? null} />
-                    </div>
+                    </motion.div>
                   </TabsContent>
 
 
 
                   {/* ── TAB 3: Checklist ────────────────────────────────── */}
-                  <TabsContent value="checklist">
-                    <div className="bg-[#0f172a] border border-gray-800 rounded-2xl p-5">
-                      <div className="flex items-center gap-2 mb-5">
+                  <TabsContent value="checklist" className="mt-0 outline-none">
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -10 }}
+                      transition={{ duration: 0.3 }}
+                      className="bg-[#0f172a] border border-gray-800 rounded-2xl p-6"
+                    >
+                      <div className="flex items-center gap-3 mb-6 pb-4 border-b border-gray-800/60">
                         <div className="p-1.5 bg-green-500/10 rounded-lg">
                           <CheckCircle2 className="w-4 h-4 text-green-500" />
                         </div>
                         <h3 className="text-sm font-semibold text-white">Execution Checklist</h3>
                       </div>
-                      <InteractiveChecklist items={output?.checklist ?? []} />
-                    </div>
+                      <InteractiveChecklist
+                        items={output?.checklist ?? []}
+                        policyId={output?.id}
+                        onUpdate={(updatedChecklist) => setOutput(prev => prev ? { ...prev, checklist: updatedChecklist } : null)}
+                      />
+                    </motion.div>
                   </TabsContent>
                 </Tabs>
               </motion.div>
