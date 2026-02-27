@@ -1,0 +1,256 @@
+import { Policy, ChecklistState, DecisionTree, WorkflowStep, ChecklistItem } from '@/types/policy';
+
+const workflowSteps: WorkflowStep[] = [
+  {
+    id: 'step-1',
+    title: 'Requirements Gathering',
+    description: 'Collect all necessary documents and information',
+    order: 1,
+    status: 'completed',
+  },
+  {
+    id: 'step-2',
+    title: 'Compliance Review',
+    description: 'Verify compliance with existing policies',
+    order: 2,
+    status: 'completed',
+  },
+  {
+    id: 'step-3',
+    title: 'Stakeholder Approval',
+    description: 'Get approval from relevant stakeholders',
+    order: 3,
+    status: 'in-progress',
+  },
+  {
+    id: 'step-4',
+    title: 'Implementation Planning',
+    description: 'Create detailed implementation timeline',
+    order: 4,
+    status: 'pending',
+  },
+  {
+    id: 'step-5',
+    title: 'Final Deployment',
+    description: 'Deploy to production environment',
+    order: 5,
+    status: 'pending',
+  },
+];
+
+const checklistItems: ChecklistItem[] = [
+  {
+    id: 'check-1',
+    title: 'Application received and verified',
+    description: 'Confirm all required documents are present',
+    completed: true,
+    order: 1,
+  },
+  {
+    id: 'check-2',
+    title: 'Zoning compliance check',
+    description: 'Verify property meets local zoning requirements',
+    completed: true,
+    order: 2,
+  },
+  {
+    id: 'check-3',
+    title: 'Environmental assessment',
+    description: 'Complete environmental impact review',
+    completed: true,
+    order: 3,
+  },
+  {
+    id: 'check-4',
+    title: 'Community notification',
+    description: 'Post public notice for community review',
+    completed: false,
+    order: 4,
+  },
+  {
+    id: 'check-5',
+    title: 'Public hearing scheduled',
+    description: 'Schedule and conduct public hearing if needed',
+    completed: false,
+    order: 5,
+  },
+  {
+    id: 'check-6',
+    title: 'Final approvals obtained',
+    description: 'Obtain all required signatures and approvals',
+    completed: false,
+    order: 6,
+  },
+];
+
+const decisionTree: DecisionTree = {
+  rootNodeId: 'node-root',
+  nodes: [
+    {
+      id: 'node-root',
+      label: 'Does project require zoning variance?',
+      type: 'root',
+      x: 500,
+      y: 50,
+      nextNodeIds: ['node-1', 'node-2'],
+    },
+    {
+      id: 'node-1',
+      label: 'Yes - Variance Needed',
+      type: 'decision',
+      x: 300,
+      y: 150,
+      nextNodeIds: ['node-3'],
+    },
+    {
+      id: 'node-2',
+      label: 'No - Standard Approval',
+      type: 'decision',
+      x: 700,
+      y: 150,
+      nextNodeIds: ['node-4'],
+    },
+    {
+      id: 'node-3',
+      label: 'Schedule Board Meeting',
+      type: 'action',
+      x: 300,
+      y: 250,
+      nextNodeIds: ['node-5'],
+    },
+    {
+      id: 'node-4',
+      label: 'Process Standard Review',
+      type: 'action',
+      x: 700,
+      y: 250,
+      nextNodeIds: ['node-5'],
+    },
+    {
+      id: 'node-5',
+      label: 'Issue Final Decision',
+      type: 'outcome',
+      x: 500,
+      y: 350,
+    },
+  ],
+  edges: [
+    {
+      id: 'edge-1',
+      source: 'node-root',
+      target: 'node-1',
+      label: 'Variance Required',
+    },
+    {
+      id: 'edge-2',
+      source: 'node-root',
+      target: 'node-2',
+      label: 'Standard Path',
+    },
+    {
+      id: 'edge-3',
+      source: 'node-1',
+      target: 'node-3',
+      label: 'Schedule',
+    },
+    {
+      id: 'edge-4',
+      source: 'node-2',
+      target: 'node-4',
+      label: 'Review',
+    },
+    {
+      id: 'edge-5',
+      source: 'node-3',
+      target: 'node-5',
+      label: 'Board Decision',
+    },
+    {
+      id: 'edge-6',
+      source: 'node-4',
+      target: 'node-5',
+      label: 'Final',
+    },
+  ],
+};
+
+export const mockPolicies: Policy[] = [
+  {
+    id: 'policy-1',
+    title: 'Smart Zoning & Rent Transparency',
+    description: 'A comprehensive policy for zoning regulations and rental market transparency',
+    category: 'Urban Planning',
+    status: 'active',
+    createdAt: new Date('2024-01-15'),
+    updatedAt: new Date('2024-02-20'),
+    steps: workflowSteps,
+    checklist_items: checklistItems,
+    decisionTree,
+    completionPercentage: 50,
+  },
+  {
+    id: 'policy-2',
+    title: 'Environmental Protection Framework',
+    description: 'Guidelines for environmental compliance and sustainability',
+    category: 'Environment',
+    status: 'active',
+    createdAt: new Date('2024-01-10'),
+    updatedAt: new Date('2024-02-18'),
+    steps: workflowSteps.map(s => ({ ...s, status: 'completed' as const })),
+    checklist_items: checklistItems.map(c => ({ ...c, completed: true })),
+    decisionTree,
+    completionPercentage: 100,
+  },
+  {
+    id: 'policy-3',
+    title: 'Community Development Initiative',
+    description: 'Program for fostering community development projects',
+    category: 'Community',
+    status: 'draft',
+    createdAt: new Date('2024-02-01'),
+    updatedAt: new Date('2024-02-21'),
+    steps: workflowSteps.map(s => ({ ...s, status: 'pending' as const })),
+    checklist_items: checklistItems.map(c => ({ ...c, completed: false })),
+    decisionTree,
+    completionPercentage: 0,
+  },
+];
+
+export const mockChecklistStates: Record<string, ChecklistState> = {
+  'policy-1': {
+    policyId: 'policy-1',
+    items: {
+      'check-1': true,
+      'check-2': true,
+      'check-3': true,
+      'check-4': false,
+      'check-5': false,
+      'check-6': false,
+    },
+    lastUpdated: new Date(),
+  },
+  'policy-2': {
+    policyId: 'policy-2',
+    items: {
+      'check-1': true,
+      'check-2': true,
+      'check-3': true,
+      'check-4': true,
+      'check-5': true,
+      'check-6': true,
+    },
+    lastUpdated: new Date(),
+  },
+  'policy-3': {
+    policyId: 'policy-3',
+    items: {
+      'check-1': false,
+      'check-2': false,
+      'check-3': false,
+      'check-4': false,
+      'check-5': false,
+      'check-6': false,
+    },
+    lastUpdated: new Date(),
+  },
+};
