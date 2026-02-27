@@ -30,20 +30,20 @@ export function BaseCard({
   }
 
   const variantClasses = {
-    default: 'bg-card text-card-foreground border shadow-card',
-    outlined: 'bg-card text-card-foreground border-2',
-    elevated: 'bg-card text-card-foreground border shadow-card-hover'
+    default: 'bg-[#0f172a] text-white border border-gray-800',
+    outlined: 'bg-[#0f172a] text-white border-2 border-gray-700',
+    elevated: 'bg-[#0f172a] text-white border border-gray-800 shadow-lg'
   }
 
   const interactionClasses = cn(
-    hover && 'hover:shadow-card-hover transition-shadow',
-    clickable && 'cursor-pointer hover:bg-accent/50 transition-colors'
+    hover && 'hover:border-green-500/30 transition-all',
+    clickable && 'cursor-pointer hover:border-green-500/30 transition-all'
   )
 
   return (
     <div
       className={cn(
-        'rounded-lg',
+        'rounded-2xl',
         variantClasses[variant],
         paddingClasses[padding],
         interactionClasses,

@@ -7,9 +7,9 @@ export const metadata = {
   description: 'View and manage your policies and workflows',
 };
 
-async function DashboardContent() {
+async function DashboardData() {
   const [policies, stats] = await Promise.all([
-    fetchRecentPolicies(3),
+    fetchRecentPolicies(5),
     getCompletionStats(),
   ]);
 
@@ -18,8 +18,14 @@ async function DashboardContent() {
 
 export default function DashboardPage() {
   return (
-    <Suspense fallback={<div className="p-6 text-center text-muted-foreground">Loading dashboard...</div>}>
-      <DashboardContent />
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center h-64 text-sm text-gray-500">
+          Loading dashboard…
+        </div>
+      }
+    >
+      <DashboardData />
     </Suspense>
   );
 }

@@ -1,172 +1,135 @@
-import { Policy, ChecklistState, PolicyDetailPayload } from '@/types/policy';
-import { mockPolicies, mockChecklistStates } from '@/constants/mockData';
-
 /**
- * Data Access Layer - Currently using mock data with Promise delays
- * Replace internal logic with fetch() or prisma calls without changing component code
+ * Data Access Layer — real data via /api/policies
+ * Server-side only: uses absolute URL via env var or defaults to localhost.
  */
 
-const NETWORK_DELAY = 500; // Simulate network latency in ms
+// ── Firestore policy shape (from /api/policies) ───────────────────────────────
 
-/**
- * Fetch all policies for the landing page
- */
-export async function fetchAllPolicies(): Promise<Policy[]> {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      console.log('[v0] Fetching all policies from data service');
-      resolve(mockPolicies);
-    }, NETWORK_DELAY);
-  });
+interface FirestorePolicy {
+  id: string;
+  title: string;
+  input_text?: string;
+  workflow: Array<{ step: string; description: string }>;
+  decision_tree: Record<string, unknown>;
+  checklist: string[];
+  created_at: { seconds?: number; _seconds?: number } | null;
 }
 
-/**
- * Fetch a specific policy by ID with its checklist state
- */
-export async function fetchPolicyById(
-  id: string
-): Promise<PolicyDetailPayload | null> {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      console.log(`[v0] Fetching policy ${id} from data service`);
-      const policy = mockPolicies.find((p) => p.id === id);
-      const checklistState = mockChecklistStates[id];
+// ── Normalised Policy shape (for UI) ─────────────────────────────────────────
 
-      if (!policy || !checklistState) {
-        resolve(null);
-        return;
-      }
-
-      resolve({
-        policy,
-        checklistState,
-      });
-    }, NETWORK_DELAY);
-  });
+export interface DashboardPolicy {
+  id: string;
+  title: string;
+  description: string;
+  status: 'active' | 'draft' | 'archived';
+  completionPercentage: number;
+  checklistTotal: number;
+  workflowSteps: number;
+  createdAt: string;
 }
 
-/**
- * Fetch recent policies (limited set) for the dashboard
- */
-export async function fetchRecentPolicies(limit: number = 3): Promise<Policy[]> {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      console.log(`[v0] Fetching ${limit} recent policies from data service`);
-      resolve(mockPolicies.slice(0, limit));
-    }, NETWORK_DELAY);
-  });
-}
-
-/**
- * Save checklist state after user interaction
- * This function is optimistic - UI updates immediately, then confirms with backend
- */
-export async function saveChecklistState(
-  policyId: string,
-  itemId: string,
-  completed: boolean
-): Promise<ChecklistState> {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      console.log(
-        `[v0] Saving checklist state - Policy: ${policyId}, Item: ${itemId}, Completed: ${completed}`
-      );
-
-      const state = mockChecklistStates[policyId];
-      if (state) {
-        state.items[itemId] = completed;
-        state.lastUpdated = new Date();
-      }
-
-      resolve(state || { policyId, items: {}, lastUpdated: new Date() });
-    }, NETWORK_DELAY);
-  });
-}
-
-/**
- * Update entire checklist state
- */
-export async function updateChecklistState(
-  policyId: string,
-  items: Record<string, boolean>
-): Promise<ChecklistState> {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      console.log(
-        `[v0] Updating entire checklist state for policy ${policyId}`
-      );
-
-      const state = mockChecklistStates[policyId] || {
-        policyId,
-        items: {},
-        lastUpdated: new Date(),
-      };
-
-      state.items = items;
-      state.lastUpdated = new Date();
-      mockChecklistStates[policyId] = state;
-
-      resolve(state);
-    }, NETWORK_DELAY);
-  });
-}
-
-/**
- * Upload and process PDF file
- * Simulates Gemini API processing
- */
-export async function processPDFFile(
-  file: File,
-  policyTitle: string
-): Promise<{ success: boolean; data?: Policy; error?: string }> {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      console.log(`[v0] Processing PDF file: ${file.name} for policy: ${policyTitle}`);
-
-      // Simulate creating a new policy from PDF
-      const newPolicy: Policy = {
-        id: `policy-${Date.now()}`,
-        title: policyTitle || file.name.replace('.pdf', ''),
-        description: 'Generated from PDF upload',
-        category: 'Auto-Generated',
-        status: 'draft',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        steps: [],
-        checklist_items: [],
-        decisionTree: {
-          rootNodeId: 'root',
-          nodes: [],
-          edges: [],
-        },
-        completionPercentage: 0,
-      };
-
-      console.log('[v0] PDF processing complete, new policy created:', newPolicy.id);
-      resolve({ success: true, data: newPolicy });
-    }, NETWORK_DELAY * 2); // Longer delay for file processing
-  });
-}
-
-/**
- * Get completion statistics for dashboard
- */
-export async function getCompletionStats(): Promise<{
+export interface DashboardStats {
   totalPolicies: number;
-  activePolicies: number;
-  avgCompletion: number;
-}> {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      console.log('[v0] Fetching completion statistics');
-      const activePolicies = mockPolicies.filter(p => p.status === 'active');
-      const avgCompletion = mockPolicies.reduce((sum, p) => sum + p.completionPercentage, 0) / mockPolicies.length;
+  completedTasks: number;
+  pendingTasks: number;
+}
 
-      resolve({
-        totalPolicies: mockPolicies.length,
-        activePolicies: activePolicies.length,
-        avgCompletion: Math.round(avgCompletion),
-      });
-    }, NETWORK_DELAY);
-  });
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function getBaseUrl(): string {
+  // Works in both server (absolute) and edge runtimes
+  return process.env.NEXT_PUBLIC_BASE_URL ?? 'http://localhost:3000';
+}
+
+function normalisePolicy(raw: FirestorePolicy): DashboardPolicy {
+  const checklistTotal = raw.checklist?.length ?? 0;
+  const workflowSteps = raw.workflow?.length ?? 0;
+
+  const seconds =
+    raw.created_at?.seconds ??
+    (raw.created_at as unknown as { _seconds?: number })?._seconds;
+  const createdAt = seconds
+    ? new Date(seconds * 1000).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    })
+    : 'Unknown date';
+
+  // Derive a status: policies from Gemini start as "active"
+  const status: DashboardPolicy['status'] = 'active';
+
+  // Use truncated input_text as description, or a generic fallback
+  const description = raw.input_text
+    ? raw.input_text.slice(0, 120).replace(/\n/g, ' ')
+    : 'AI-generated policy document';
+
+  return {
+    id: raw.id,
+    title: raw.title,
+    description,
+    status,
+    completionPercentage: 0, // tracked client-side via checklist
+    checklistTotal,
+    workflowSteps,
+    createdAt,
+  };
+}
+
+// ── Public API ────────────────────────────────────────────────────────────────
+
+/**
+ * Fetch all policies ordered newest-first.
+ */
+export async function fetchAllPolicies(): Promise<DashboardPolicy[]> {
+  try {
+    const res = await fetch(`${getBaseUrl()}/api/policies`, {
+      cache: 'no-store',
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return ((data.policies ?? []) as FirestorePolicy[]).map(normalisePolicy);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Fetch recent N policies for the dashboard (newest first).
+ */
+export async function fetchRecentPolicies(limit = 5): Promise<DashboardPolicy[]> {
+  const all = await fetchAllPolicies();
+  return all.slice(0, limit);
+}
+
+/**
+ * Compute dashboard stats from the full policy list.
+ */
+export async function getCompletionStats(): Promise<DashboardStats> {
+  const all = await fetchAllPolicies();
+
+  // Count total checklist items across all policies
+  const totalTasks = all.reduce((sum, p) => sum + p.checklistTotal, 0);
+
+  return {
+    totalPolicies: all.length,
+    completedTasks: 0,           // tracked client-side; 0 until persisted
+    pendingTasks: totalTasks,    // all checklist items start pending
+  };
+}
+
+/**
+ * Fetch a single policy by ID.
+ */
+export async function fetchPolicyById(id: string): Promise<DashboardPolicy | null> {
+  try {
+    const res = await fetch(`${getBaseUrl()}/api/policies/${id}`, {
+      cache: 'no-store',
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.policy ? normalisePolicy(data.policy as FirestorePolicy) : null;
+  } catch {
+    return null;
+  }
 }

@@ -64,24 +64,3 @@ export interface UserProfile {
   lastSync: Date;
 }
 
-export interface GeminiMessage {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp: Date;
-}
-
-export interface GeminiResponse {
-  success: boolean;
-  message: GeminiMessage;
-  error?: string;
-}
-
-export interface ChatMessage {
-  id: string;
-  policyId: string;
-  userQuery: string;
-  aiResponse: string;
-  timestamp: Date;
-  savedToNotes?: boolean;
-}

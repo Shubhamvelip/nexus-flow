@@ -12,38 +12,30 @@ interface MainLayoutProps {
   actions?: ReactNode
 }
 
-export function MainLayout({ 
-  children, 
-  showSidebar = true, 
-  title, 
-  subtitle, 
-  actions 
+export function MainLayout({
+  children,
+  showSidebar = true,
+  title,
+  subtitle,
+  actions
 }: MainLayoutProps) {
   return (
-    <div className="min-h-screen bg-background text-foreground flex">
-      {/* Sidebar - Fixed width */}
+    <div className="min-h-screen bg-[#020617] text-white flex">
+      {/* Sidebar */}
       {showSidebar && (
-        <div className="sidebar-width border-r border-border flex flex-col">
+        <div className="flex-shrink-0">
           <Sidebar />
         </div>
       )}
 
       {/* Main Content Area */}
-      <div className="content-width flex flex-col">
-        {/* Top Bar - Fixed height */}
-        <TopBar title={title || ''} subtitle={subtitle || ''} actions={actions} />
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Top Bar */}
+        <TopBar title={title || ''} />
 
-        {/* Page Content - Standardized padding */}
-        <main className="page-padding flex-1 overflow-auto">
-          <div className="container-standard">
-            {title && (
-              <div className="mb-6">
-                <h1 className="text-3xl font-bold">{title}</h1>
-                {subtitle && <p className="text-muted-foreground mt-1">{subtitle}</p>}
-              </div>
-            )}
-            {children}
-          </div>
+        {/* Page Content */}
+        <main className="flex-1 overflow-auto p-6">
+          {children}
         </main>
       </div>
     </div>

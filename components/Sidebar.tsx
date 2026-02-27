@@ -25,35 +25,34 @@ export function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="w-64 bg-sidebar border-r border-sidebar-border flex flex-col h-screen">
+    <aside className="w-64 bg-[#070d1a] border-r border-gray-800 flex flex-col h-screen">
       {/* Header */}
-      <div className="p-6 border-b border-sidebar-border">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-sidebar-primary rounded-lg flex items-center justify-center">
-            <Zap className="w-5 h-5 text-sidebar-primary-foreground" />
+      <div className="px-5 py-5 border-b border-gray-800">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 bg-green-600 rounded-xl flex items-center justify-center">
+            <Zap className="w-4 h-4 text-white" />
           </div>
-          <h1 className="text-xl font-bold text-sidebar-foreground">Nexus Flow</h1>
+          <h1 className="text-lg font-bold text-white">Nexus Flow</h1>
         </div>
-        <p className="text-xs text-sidebar-foreground/60 mt-1">Policy Management</p>
+        <p className="text-xs text-gray-500 mt-1 ml-10">Policy Management</p>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 px-4 py-6">
-        <div className="space-y-2">
+      <nav className="flex-1 px-4 py-5">
+        <div className="space-y-1">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href;
             return (
               <Link key={item.href} href={item.href}>
                 <motion.div
-                  className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-                    isActive
-                      ? 'bg-sidebar-primary text-sidebar-primary-foreground'
-                      : 'text-sidebar-foreground hover:bg-sidebar-accent'
-                  }`}
-                  whileHover={{ x: 4 }}
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm ${isActive
+                      ? 'bg-green-600/20 text-green-400 border border-green-500/20'
+                      : 'text-gray-400 hover:text-white hover:bg-gray-800/50'
+                    }`}
+                  whileHover={{ x: 2 }}
                 >
-                  <Icon className="w-5 h-5" />
+                  <Icon className="w-4 h-4" />
                   <span className="font-medium">{item.label}</span>
                 </motion.div>
               </Link>
@@ -63,20 +62,20 @@ export function Sidebar() {
       </nav>
 
       {/* Stats Section */}
-      <div className="px-4 py-4 border-t border-sidebar-border space-y-3">
-        <div className="text-xs font-semibold text-sidebar-foreground/60 uppercase">
+      <div className="px-4 py-4 border-t border-gray-800 space-y-2.5">
+        <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide px-1">
           Quick Stats
-        </div>
+        </p>
         <div className="space-y-2">
           <div className="flex items-center gap-2 text-sm">
-            <CheckCircle className="w-4 h-4 text-emerald-500" />
-            <span className="text-sidebar-foreground">
+            <CheckCircle className="w-3.5 h-3.5 text-green-500" />
+            <span className="text-gray-400 text-xs">
               {mockDashboardStats.tasksCompleted} completed
             </span>
           </div>
           <div className="flex items-center gap-2 text-sm">
-            <Clock className="w-4 h-4 text-amber-500" />
-            <span className="text-sidebar-foreground">
+            <Clock className="w-3.5 h-3.5 text-amber-500" />
+            <span className="text-gray-400 text-xs">
               {mockDashboardStats.pendingReviews} pending
             </span>
           </div>
@@ -84,10 +83,10 @@ export function Sidebar() {
       </div>
 
       {/* User Profile Section */}
-      <div className="p-4 border-t border-sidebar-border">
-        <div className="flex items-center gap-3 p-3 bg-sidebar-accent rounded-lg">
-          <div className="w-10 h-10 bg-sidebar-primary rounded-full flex items-center justify-center">
-            <span className="text-sidebar-primary-foreground font-bold">
+      <div className="p-4 border-t border-gray-800">
+        <div className="flex items-center gap-3 p-3 bg-gray-800/40 rounded-xl">
+          <div className="w-8 h-8 bg-green-600 rounded-full flex items-center justify-center flex-shrink-0">
+            <span className="text-white font-bold text-xs">
               {mockUserProfile.name
                 .split(' ')
                 .map((n) => n[0])
@@ -95,16 +94,16 @@ export function Sidebar() {
             </span>
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-sidebar-foreground truncate">
+            <p className="text-sm font-medium text-white truncate">
               {mockUserProfile.name}
             </p>
-            <p className="text-xs text-sidebar-foreground/60 truncate">
+            <p className="text-xs text-gray-500 truncate">
               {mockUserProfile.role}
             </p>
           </div>
         </div>
-        <button className="w-full flex items-center gap-2 mt-3 px-4 py-2 text-sm text-sidebar-foreground hover:bg-sidebar-accent rounded-lg transition-colors">
-          <LogOut className="w-4 h-4" />
+        <button className="w-full flex items-center gap-2 mt-2 px-3 py-2 text-xs text-gray-500 hover:text-white hover:bg-gray-800/40 rounded-xl transition-colors">
+          <LogOut className="w-3.5 h-3.5" />
           Logout
         </button>
       </div>
