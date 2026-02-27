@@ -21,7 +21,7 @@ import {
 import { WorkflowTimeline } from '@/components/shared/WorkflowTimeline';
 import { VisualDecisionTree } from '@/components/shared/VisualDecisionTree';
 import { InteractiveChecklist } from '@/components/shared/InteractiveChecklist';
-import { PolicyChecklistItem, PolicyDecisionTree } from '@/lib/firebase';
+import { PolicyChecklistItem, PolicyDecisionTree, updatePolicyChecklist } from '@/lib/firebase';
 import { exportPolicyToPDF } from '@/lib/export';
 import { toast } from 'sonner';
 
@@ -157,6 +157,22 @@ export function PolicyDetailContent({ policyId }: PolicyDetailContentProps) {
     }
   };
 
+  const handleMarkComplete = async () => {
+    if (!policy) return;
+    const updatedChecklist = policy.checklist.map(item => ({ ...item, completed: true }));
+
+    // Optimistic UI update
+    setPolicy({ ...policy, checklist: updatedChecklist });
+    setChecklistProgress(100);
+
+    try {
+      await updatePolicyChecklist(policyId, updatedChecklist);
+      toast.success("All items marked complete");
+    } catch (err) {
+      toast.error("Failed to mark complete in database");
+    }
+  };
+
   const steps = policy.workflow ?? [];
   const checklist = policy.checklist ?? [];
 
@@ -215,15 +231,6 @@ export function PolicyDetailContent({ policyId }: PolicyDetailContentProps) {
               className="w-9 h-9 flex items-center justify-center border border-gray-700 hover:border-green-500/40 text-gray-400 hover:text-white rounded-xl transition-colors"
             >
               <Share2 className="w-4 h-4" />
-            </motion.button>
-            <motion.button
-              whileHover={{ scale: 1.06 }}
-              whileTap={{ scale: 0.94 }}
-              title="Edit"
-              className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white rounded-xl px-3 py-2 text-xs font-semibold transition-colors"
-            >
-              <Edit className="w-3.5 h-3.5" />
-              Edit
             </motion.button>
           </div>
         </div>
@@ -350,6 +357,7 @@ export function PolicyDetailContent({ policyId }: PolicyDetailContentProps) {
         className="flex items-center gap-3 flex-wrap"
       >
         <motion.button
+          onClick={handleMarkComplete}
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
           className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors"

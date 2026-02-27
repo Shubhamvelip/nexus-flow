@@ -16,7 +16,10 @@ interface InteractiveChecklistProps {
 function normalizeItems(raw: PolicyChecklistItem[] | string[]): PolicyChecklistItem[] {
     return raw.map((item, idx) => {
         if (typeof item === 'string') {
-            return { id: `item-temp-${idx}`, title: item, completed: false };
+            return { id: crypto.randomUUID(), title: item, completed: false };
+        }
+        if (!item.id) {
+            return { ...item, id: crypto.randomUUID() };
         }
         return item; // PolicyChecklistItem
     });
@@ -43,6 +46,9 @@ export function InteractiveChecklist({
         const doneCount = normalized.filter(i => i.completed).length;
         const total = normalized.length;
         const pct = total > 0 ? Math.round((doneCount / total) * 100) : 0;
+
+        console.log("Checklist items:", normalized);
+
         onProgressChange?.(pct);
     }, [items, onProgressChange]);
 
@@ -147,15 +153,15 @@ export function InteractiveChecklist({
                 </div>
             </div>
 
-            {/* Items */}
             <div className="space-y-2">
                 {localItems.map((item, idx) => {
                     const isDone = item.completed;
                     const label = item.title ?? `Item ${idx + 1}`;
+                    const itemKey = item.id || `fallback-idx-${idx}`;
 
                     return (
                         <motion.button
-                            key={item.id}
+                            key={itemKey}
                             initial={{ opacity: 0, y: 8 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ delay: idx * 0.04, duration: 0.3 }}

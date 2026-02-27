@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { MainLayout } from '@/components/shared/MainLayout'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -184,7 +184,12 @@ export function GeneratorPageContent() {
   const canGenerate = title.trim().length > 0
   const generated = output !== null
 
-  const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const [timestamp, setTimestamp] = useState<string>('')
+  useEffect(() => {
+    if (generated) {
+      setTimestamp(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
+    }
+  }, [generated])
 
 
   // ── Render ──────────────────────────────────────────────────────────────────

@@ -46,7 +46,6 @@ const TIPS = [
   },
 ];
 
-const todayTip = TIPS[new Date().getDay() % TIPS.length];
 
 // ── Stat cards ────────────────────────────────────────────────────────────────
 
@@ -184,6 +183,11 @@ export function DashboardClient() {
     pendingTasks: 0,
   });
   const [isLoading, setIsLoading] = useState(true);
+  const [todayTip, setTodayTip] = useState(TIPS[0]);
+
+  useEffect(() => {
+    setTodayTip(TIPS[new Date().getDay() % TIPS.length]);
+  }, []);
 
   useEffect(() => {
     async function loadData() {
