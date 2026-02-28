@@ -1,10 +1,60 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { generatePolicy } from '@/lib/ai';
+import { generatePolicy, PolicyInput } from '@/lib/ai';
 
 export async function POST(request: NextRequest) {
     try {
-        const body = await request.json();
-        const { title, input_text, userId } = body;
+        const contentType = request.headers.get('content-type') || '';
+        let title = '';
+        let policyText = '';
+        let description = '';
+        let notes = '';
+        let userId = '';
+        let file: File | null = null;
+
+        if (contentType.includes('multipart/form-data')) {
+            const formData = await request.formData();
+            title = (formData.get('title') as string) || '';
+            policyText = (formData.get('input_text') as string) || '';
+            description = (formData.get('description') as string) || '';
+            notes = (formData.get('notes') as string) || '';
+            userId = (formData.get('userId') as string) || '';
+            file = formData.get('pdf') as File | null;
+        } else {
+            const body = await request.json();
+            title = body.title || '';
+            policyText = body.input_text || '';
+            description = body.description || '';
+            notes = body.notes || '';
+            userId = body.userId || '';
+        }
+
+        let pdfBase64: string | undefined = undefined;
+
+        if (file) {
+            try {
+                const arrayBuf = await file.arrayBuffer();
+                pdfBase64 = Buffer.from(arrayBuf).toString('base64');
+            } catch (err) {
+                console.error("PDF read error:", err);
+            }
+        }
+
+        const hasTextContent = !!policyText?.trim() || !!description?.trim() || !!notes?.trim();
+
+        if (!hasTextContent && (!file || !pdfBase64)) {
+            return NextResponse.json(
+                { error: 'Provide at least a policy text, description, or PDF.' },
+                { status: 400 }
+            );
+        }
+
+        const finalInput = `
+${policyText || ""}
+${description || ""}
+${notes || ""}
+`.trim();
+
+        console.log("Final input length:", finalInput.length);
 
         if (!userId || typeof userId !== 'string') {
             return NextResponse.json(
@@ -20,20 +70,19 @@ export async function POST(request: NextRequest) {
                 { status: 400 }
             );
         }
-        if (!input_text || typeof input_text !== 'string' || input_text.trim() === '') {
-            return NextResponse.json(
-                { error: 'input_text is required and must be a non-empty string' },
-                { status: 400 }
-            );
-        }
 
         // 1. Generate structured output via Gemini
-        const generated = await generatePolicy(input_text.trim());
+        const policyInput: PolicyInput = {
+            title: title.trim(),
+            policyText: finalInput,
+            pdfBase64,
+        };
+        const generated = await generatePolicy(policyInput);
 
         // 2. Return formatted policy object
         const policy = {
             title: title.trim(),
-            input_text: input_text.trim(),
+            input_text: finalInput.trim(),
             workflow: generated.workflow,
             decision_tree: generated.decision_tree,
             checklist: generated.checklist.map((text, idx) => ({
@@ -56,8 +105,8 @@ export async function POST(request: NextRequest) {
                 { status: 503 }
             );
         }
-        if (message.includes('Gemini')) {
-            return NextResponse.json({ error: message }, { status: 502 });
+        if (message.includes('Gemini') || message === 'Provide at least a policy text, description, or PDF') {
+            return NextResponse.json({ error: message }, { status: 400 });
         }
         return NextResponse.json({ error: message }, { status: 500 });
     }

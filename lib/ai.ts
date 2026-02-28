@@ -37,80 +37,44 @@ type DecisionNode = InternalNode | LeafNode;
 
 // ── System prompt ─────────────────────────────────────────────────────────────
 
-const SYSTEM_PROMPT = `You are an AI that converts government policy documents into structured execution outputs for field officers.
+const SYSTEM_PROMPT = `You are an AI system that converts government policy text into structured, executable outputs for field officers.
 
-Analyze the given policy text and generate STRICT JSON with exactly three top-level keys:
-- "workflow": array of step objects
-- "decision_tree": a nested decision tree object (see rules below)
-- "checklist": array of strings
+Analyze the following policy carefully and generate outputs based ONLY on its content.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-DECISION TREE RULES (CRITICAL)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Do NOT generate generic workflows. The output MUST reflect the specific rules, entities, and conditions mentioned in the policy.
 
-Every node in decision_tree is EITHER:
+Before generating output, extract the following from the policy text:
+- ENTITIES: Departments, actors, roles, or organizations mentioned
+- CONDITIONS: If/else rules, eligibility checks, thresholds, or decision points
+- ACTIONS: Concrete steps, procedures, or tasks described
 
-A) An INTERNAL node (has a question to ask):
-{
-  "question": "Is the application complete?",
-  "yes": <node>,
-  "no": <node>
-}
+Use those extracted elements to populate the JSON below. Every workflow step, decision branch, and checklist item must trace back to something in the policy text.
 
-B) A LEAF node (has a final action, no branches):
-{
-  "action": "Approve the application and notify the officer."
-}
+Return ONLY valid JSON in this exact format — no extra text, no explanation, no markdown, no code blocks:
 
-Rules:
-- Maximum depth: 3 levels (root = level 1, children = level 2, grandchildren = level 3)
-- Level 3 nodes MUST always be leaf nodes (action only, no further branching)
-- NEVER use "action" and "question" together in the same node
-- NEVER use null, undefined, or empty strings
-- Every internal node MUST have both "yes" and "no" keys
-
-━━━━━
-EXAMPLE OUTPUT (follow this structure exactly):
-━━━━━
 {
   "workflow": [
-    { "step": "Receive Application", "description": "Collect and log the incoming application for review." },
-    { "step": "Verify Documents", "description": "Check all submitted documents for completeness and validity." }
+    { "step": "string", "description": "string" }
   ],
   "decision_tree": {
-    "question": "Is the application complete?",
-    "yes": {
-      "question": "Are all submitted documents valid?",
-      "yes": {
-        "action": "Approve the application and issue confirmation."
-      },
-      "no": {
-        "action": "Reject the application and request corrected documents."
-      }
-    },
-    "no": {
-      "question": "Is the applicant reachable?",
-      "yes": {
-        "action": "Contact the applicant and request missing information."
-      },
-      "no": {
-        "action": "Mark the application as abandoned after 30 days."
-      }
-    }
+    "question": "string",
+    "yes": { "action": "string" },
+    "no": { "action": "string" }
   },
   "checklist": [
-    "Verify application reference number",
-    "Check all required documents are attached",
-    "Confirm applicant identity",
-    "Record decision and notify applicant"
+    { "task": "string", "completed": false }
   ]
 }
 
-━━━━━
-IMPORTANT:
-- Return ONLY raw JSON — no markdown, no code fences, no explanation
-- The decision_tree root MUST be an internal node (must have "question", "yes", "no")
-- Keep the tree relevant to the actual policy content provided`;
+Strict rules:
+- Different policy inputs MUST produce different outputs
+- Every step must directly reference a rule, entity, or action from the input
+- Decision tree questions must come from real conditions in the policy text
+- Checklist tasks must be actionable for the entity performing them
+- If the policy mentions waste collection → output must be about waste collection
+- If the policy mentions construction permits → output must be about permits
+- ONLY JSON`;
+
 
 // ── JSON extraction ───────────────────────────────────────────────────────────
 
@@ -236,43 +200,96 @@ function fallbackDecisionTree(policyTitle: string): DecisionNode {
 
 // ── Main export ───────────────────────────────────────────────────────────────
 
+export interface PolicyInput {
+    title: string;
+    description?: string;
+    notes?: string;
+    policyText?: string;
+    pdfBase64?: string;
+}
+
 /**
- * Send policy text to Gemini and return a structured, validated
+ * Send structured policy input to Gemini and return a validated
  * workflow / decision_tree / checklist object.
  */
-export async function generatePolicy(inputText: string): Promise<GeneratedPolicy> {
+export async function generatePolicy(input: PolicyInput): Promise<GeneratedPolicy> {
     const genAI = getGeminiClient();
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
-    const prompt = `${SYSTEM_PROMPT}\n\n━━━━━\nPOLICY TEXT:\n${inputText}`;
+    const prompt = `${SYSTEM_PROMPT}
+
+Policy Input:
+TITLE: ${input.title}
+DESCRIPTION: ${input.description || '(not provided)'}
+NOTES: ${input.notes || '(none)'}
+FULL TEXT: ${input.policyText || '(see attached PDF)'}`;
 
     let raw: string;
     try {
-        const result = await model.generateContent(prompt);
+        let result;
+        if (input.pdfBase64) {
+            result = await model.generateContent([
+                {
+                    inlineData: {
+                        mimeType: "application/pdf",
+                        data: input.pdfBase64,
+                    },
+                },
+                { text: prompt },
+            ]);
+        } else {
+            result = await model.generateContent(prompt);
+        }
         raw = result.response.text();
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         throw new Error(`Gemini API error: ${message}`);
     }
 
-    // ── Parse JSON ───────────────────────────────────────────────────────────
-    let parsed: unknown;
-    try {
-        parsed = JSON.parse(extractJson(raw));
-    } catch {
-        throw new Error(`Gemini returned invalid JSON. Raw: ${raw.slice(0, 400)}`);
+    // ── Log raw AI response ──────────────────────────────────────────────────
+    console.log('[Gemini] Raw response:', raw);
+
+    // ── Parse JSON with one retry ────────────────────────────────────────────
+    async function attemptParse(responseText: string): Promise<unknown> {
+        try {
+            return JSON.parse(extractJson(responseText));
+        } catch {
+            return null;
+        }
     }
 
-    if (!validateShape(parsed)) {
-        throw new Error('Gemini response is missing required fields (workflow / decision_tree / checklist)');
+    let parsed = await attemptParse(raw);
+
+    if (parsed === null) {
+        // Retry once with an explicit nudge
+        console.warn('[Gemini] First parse failed — retrying with a stricter prompt');
+        const retryPrompt = `${prompt}\n\nIMPORTANT: Your previous response could not be parsed as JSON. Return ONLY raw JSON — no markdown, no text, no code fences.`;
+        try {
+            const retryResult = await model.generateContent(retryPrompt);
+            const retryRaw = retryResult.response.text();
+            console.log('[Gemini] Retry raw response:', retryRaw);
+            parsed = await attemptParse(retryRaw);
+        } catch (retryErr) {
+            console.error('[Gemini] Retry API call failed:', retryErr);
+        }
     }
+
+    // ── Graceful fallback if parse still failed ──────────────────────────────
+    if (parsed === null || typeof parsed !== 'object') {
+        console.error('[Gemini] Could not parse JSON after retry. Using empty fallback.');
+        parsed = { workflow: [], decision_tree: null, checklist: [] };
+    }
+
+    // Cast to loose record for field access
+    const parsedObj = parsed as Record<string, unknown>;
 
     // ── Sanitize workflow ────────────────────────────────────────────────────
-    const workflow: PolicyWorkflowStep[] = (parsed.workflow as unknown[])
-        .filter((s): s is Record<string, string> => !!s && typeof s === 'object')
+    const rawWorkflow = Array.isArray(parsedObj.workflow) ? parsedObj.workflow as unknown[] : [];
+    const workflow: PolicyWorkflowStep[] = rawWorkflow
+        .filter((s): s is Record<string, unknown> => !!s && typeof s === 'object')
         .map((s) => ({
-            step: (s.step ?? s.title ?? 'Step').trim(),
-            description: (s.description ?? '').trim(),
+            step: String(s.step ?? s.title ?? 'Step').replace(/^\d+$/, (n) => `Step ${n}`).trim(),
+            description: String(s.description ?? '').trim(),
         }))
         .filter((s) => s.step.length > 0);
 
@@ -283,23 +300,41 @@ export async function generatePolicy(inputText: string): Promise<GeneratedPolicy
         );
     }
 
-    // ── Sanitize decision tree (recursive, max 3 levels) ────────────────────
+    // ── Sanitize decision tree ───────────────────────────────────────────────
+    // Accept decision_tree (object) or decisionTree (array).
+    const rawTree = parsedObj.decision_tree ?? parsedObj.decisionTree;
+
     let decision_tree: DecisionNode;
     try {
-        const sanitized = sanitizeDecisionNode(parsed.decision_tree, 1, 3);
-        // Root MUST be internal — if sanitization produced a leaf, wrap it
-        if ('action' in sanitized) {
-            decision_tree = fallbackDecisionTree(workflow[0]?.step ?? 'this policy');
-        } else {
-            decision_tree = sanitized;
+        let treeInput: unknown = rawTree;
+        if (Array.isArray(rawTree) && rawTree.length > 0) {
+            const first = rawTree[0] as Record<string, unknown>;
+            treeInput = {
+                question: first.question ?? 'Does this policy apply?',
+                yes: typeof first.yes === 'string' ? { action: first.yes } : first.yes ?? { action: 'Proceed.' },
+                no: typeof first.no === 'string' ? { action: first.no } : first.no ?? { action: 'Do not proceed.' },
+            };
         }
+        const sanitized = sanitizeDecisionNode(treeInput, 1, 3);
+        decision_tree = 'action' in sanitized
+            ? fallbackDecisionTree(workflow[0]?.step ?? 'this policy')
+            : sanitized;
     } catch {
         decision_tree = fallbackDecisionTree(workflow[0]?.step ?? 'this policy');
     }
 
     // ── Sanitize checklist ───────────────────────────────────────────────────
-    const checklist: string[] = (parsed.checklist as unknown[])
-        .map((item) => (typeof item === 'string' ? item.trim() : String(item).trim()))
+    // Accepts: string[], [{task, description}], [{task, completed}], mixed
+    const rawChecklist = Array.isArray(parsedObj.checklist) ? parsedObj.checklist as unknown[] : [];
+    const checklist: string[] = rawChecklist
+        .map((item) => {
+            if (typeof item === 'string') return item.trim();
+            if (item && typeof item === 'object') {
+                const o = item as Record<string, unknown>;
+                return String(o.task ?? o.description ?? o.title ?? '').trim();
+            }
+            return String(item).trim();
+        })
         .filter((item) => item.length > 0);
 
     if (checklist.length === 0) {

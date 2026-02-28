@@ -94,10 +94,34 @@ export function GeneratorPageContent() {
     const input_text = inputParts.join('\n\n')
 
     try {
+      let body: BodyInit;
+      let headers: HeadersInit = {};
+
+      if (pdfFile) {
+        const fd = new FormData();
+        fd.append('title', title.trim());
+        fd.append('input_text', pasteText.trim());
+        fd.append('description', description.trim());
+        fd.append('notes', notes.trim());
+        if (user?.uid) fd.append('userId', user.uid);
+        fd.append('pdf', pdfFile);
+        body = fd;
+        // Do not set Content-Type; browser handles it for multipart/form-data
+      } else {
+        headers['Content-Type'] = 'application/json';
+        body = JSON.stringify({
+          title: title.trim(),
+          input_text: pasteText.trim(),
+          description: description.trim(),
+          notes: notes.trim(),
+          userId: user?.uid,
+        });
+      }
+
       const res = await fetch('/api/generate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: title.trim(), input_text, userId: user?.uid }),
+        headers,
+        body,
       })
 
       const data = await res.json()
