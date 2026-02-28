@@ -18,12 +18,14 @@ import {
   BookOpen,
   TrendingUp,
   ListChecks,
+  Search,
+  X,
 } from 'lucide-react';
 import { MainLayout } from '@/components/shared/MainLayout';
 import type { DashboardPolicy, DashboardStats } from '@/lib/data-service';
 import { fetchRecentPolicies, getCompletionStats } from '@/lib/data-service';
 import { useAuth } from '@/contexts/AuthContext';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Loader2 } from 'lucide-react';
 
 // ── Tips of the day ───────────────────────────────────────────────────────────
@@ -185,6 +187,29 @@ export function DashboardClient() {
   const [isLoading, setIsLoading] = useState(true);
   const [todayTip, setTodayTip] = useState(TIPS[0]);
 
+  // Search state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+
+  // Debounce effect
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Filter policies based on debounced search
+  const filteredPolicies = useMemo(() => {
+    if (!debouncedSearch) return policies;
+    const lowerQuery = debouncedSearch.toLowerCase();
+    return policies.filter(
+      (policy) =>
+        policy.title.toLowerCase().includes(lowerQuery) ||
+        policy.description.toLowerCase().includes(lowerQuery)
+    );
+  }, [policies, debouncedSearch]);
+
   useEffect(() => {
     setTodayTip(TIPS[new Date().getDay() % TIPS.length]);
   }, []);
@@ -238,15 +263,37 @@ export function DashboardClient() {
                 : 'Generate your first policy to get started.'}
             </p>
           </div>
-          <motion.button
-            whileHover={{ scale: 1.03 }}
-            whileTap={{ scale: 0.97 }}
-            onClick={() => router.push('/generator')}
-            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors flex-shrink-0 shadow-lg shadow-green-900/20"
-          >
-            <Plus className="w-4 h-4" />
-            New Policy
-          </motion.button>
+          <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Search policies..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 pr-8 py-2.5 text-sm bg-[#0f172a] text-gray-300 border border-gray-800 rounded-xl focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-green-500/50 placeholder:text-gray-600 w-full sm:w-64 transition-all"
+              />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-500 hover:text-white rounded-full bg-transparent border-none transition-colors"
+                  aria-label="Clear search"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            <motion.button
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+              onClick={() => router.push('/generator')}
+              className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors flex-shrink-0 shadow-lg shadow-green-900/20"
+            >
+              <Plus className="w-4 h-4" />
+              New Policy
+            </motion.button>
+          </div>
         </motion.div>
 
         {/* ── STATS ────────────────────────────────────────────────────────── */}
@@ -301,9 +348,9 @@ export function DashboardClient() {
               )}
             </div>
 
-            {policies.length > 0 ? (
+            {filteredPolicies.length > 0 ? (
               <div className="space-y-3">
-                {policies.map((policy, idx) => (
+                {filteredPolicies.map((policy, idx) => (
                   <PolicyCard key={policy.id} policy={policy} idx={idx} />
                 ))}
               </div>
@@ -323,9 +370,13 @@ export function DashboardClient() {
                   <FileText className="w-7 h-7 text-gray-600" />
                 </motion.div>
                 <div className="space-y-1.5">
-                  <p className="text-base font-semibold text-gray-200">No policies yet</p>
+                  <p className="text-base font-semibold text-gray-200">
+                    {searchQuery ? "No matching policies found" : "No policies yet"}
+                  </p>
                   <p className="text-sm text-gray-500 max-w-xs">
-                    Use the Policy Generator to convert any government policy document into a structured workflow, decision tree, and checklist.
+                    {searchQuery
+                      ? "Try adjusting your search terms to find what you're looking for."
+                      : "Use the Policy Generator to convert any government policy document into a structured workflow, decision tree, and checklist."}
                   </p>
                 </div>
                 <div className="flex flex-col sm:flex-row gap-3">
