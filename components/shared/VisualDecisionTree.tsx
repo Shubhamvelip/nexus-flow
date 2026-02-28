@@ -1,351 +1,301 @@
 'use client';
 
-import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, ChevronRight, AlertCircle, CheckCircle2, HelpCircle, ZoomIn, ZoomOut, Maximize, ArrowDown } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { motion } from 'framer-motion';
+import { HelpCircle, CheckCircle2, AlertCircle, ZoomIn, ZoomOut, Maximize } from 'lucide-react';
+import type { PolicyDecisionTree, DecisionTreeNode, DecisionTreeEdge } from '@/lib/firebase';
 
-// ── Two schemas: API response (recursive question/yes/no) ────────────────────
+// Re-export the old API type alias so other imports don't break
+export type { PolicyDecisionTree as ApiDecisionTree };
 
-export interface ApiDecisionTree {
-    question: string;
-    yes: ApiDecisionTree | { action: string };
-    no: ApiDecisionTree | { action: string };
+// ── Layout computation ─────────────────────────────────────────────────────────
+
+interface LayoutNode {
+    node: DecisionTreeNode;
+    x: number;   // centre-x in px
+    y: number;   // top-y in px  
+    level: number;
 }
 
-// Types.ts schema (flat array of nodes)
-export interface DecisionNodeFlat {
-    id: string;
-    question: string;
-    trueAction: string;
-    falseAction: string;
-    children?: DecisionNodeFlat[];
+const NODE_W = 200;
+const NODE_H = 64;
+const H_GAP = 32;   // horizontal gap between siblings
+const V_GAP = 80;   // vertical gap between levels
+
+function computeLayout(nodes: DecisionTreeNode[], edges: DecisionTreeEdge[], startId: string): LayoutNode[] {
+    if (nodes.length === 0) return [];
+
+    // BFS from start_node to assign levels
+    const levelOf = new Map<string, number>();
+    const queue: string[] = [startId];
+    levelOf.set(startId, 0);
+    const adjacency = new Map<string, string[]>();
+    for (const e of edges) {
+        if (!adjacency.has(e.from)) adjacency.set(e.from, []);
+        adjacency.get(e.from)!.push(e.to);
+    }
+
+    while (queue.length > 0) {
+        const cur = queue.shift()!;
+        const curLevel = levelOf.get(cur)!;
+        for (const next of (adjacency.get(cur) ?? [])) {
+            if (!levelOf.has(next)) {
+                levelOf.set(next, curLevel + 1);
+                queue.push(next);
+            }
+        }
+    }
+
+    // Assign unreachable nodes to end
+    const maxLevel = Math.max(...levelOf.values(), 0);
+    for (const n of nodes) {
+        if (!levelOf.has(n.id)) levelOf.set(n.id, maxLevel + 1);
+    }
+
+    // Group by level
+    const byLevel = new Map<number, DecisionTreeNode[]>();
+    for (const n of nodes) {
+        const l = levelOf.get(n.id) ?? 0;
+        if (!byLevel.has(l)) byLevel.set(l, []);
+        byLevel.get(l)!.push(n);
+    }
+
+    // Position each level
+    const layout: LayoutNode[] = [];
+    const levels = Array.from(byLevel.keys()).sort((a, b) => a - b);
+    for (const lvl of levels) {
+        const row = byLevel.get(lvl)!;
+        const totalW = row.length * NODE_W + (row.length - 1) * H_GAP;
+        const startX = -totalW / 2 + NODE_W / 2;
+        row.forEach((n, i) => {
+            layout.push({
+                node: n,
+                x: startX + i * (NODE_W + H_GAP),
+                y: lvl * (NODE_H + V_GAP),
+                level: lvl,
+            });
+        });
+    }
+    return layout;
 }
 
-type TreeData =
-    | { type: 'api'; data: ApiDecisionTree }
-    | { type: 'flat'; data: DecisionNodeFlat[] };
+// ── Node card ─────────────────────────────────────────────────────────────────
 
-interface VisualDecisionTreeProps {
-    tree: ApiDecisionTree | DecisionNodeFlat[] | null | undefined;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// API-schema recursive renderer
-// ─────────────────────────────────────────────────────────────────────────────
-function isApiTree(obj: unknown): obj is ApiDecisionTree {
-    return !!obj && typeof obj === 'object' && 'question' in (obj as object);
-}
-
-function isLeaf(obj: unknown): obj is { action: string } {
-    return !!obj && typeof obj === 'object' && 'action' in (obj as object) && !('question' in (obj as object));
-}
-
-interface ApiNodeProps {
-    node: ApiDecisionTree;
-    depth?: number;
-}
-
-function ApiTreeNode({ node, depth = 0 }: ApiNodeProps) {
-    const [expandedYes, setExpandedYes] = useState(true);
-    const [expandedNo, setExpandedNo] = useState(true);
-
-    const yesIsLeaf = isLeaf(node.yes);
-    const noIsLeaf = isLeaf(node.no);
-
+function NodeCard({ ln, index }: { ln: LayoutNode; index: number }) {
+    const isDecision = ln.node.type === 'decision';
     return (
         <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: depth * 0.08, duration: 0.35 }}
-            className="flex flex-col items-center gap-0"
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: index * 0.04, duration: 0.2 }}
+            style={{
+                position: 'absolute',
+                left: ln.x - NODE_W / 2,
+                top: ln.y,
+                width: NODE_W,
+                height: NODE_H,
+            }}
+            className={`flex items-center justify-center rounded-xl border px-3 py-2 text-center select-none
+                ${isDecision
+                    ? 'bg-violet-500/10 border-violet-500/40 shadow-[0_0_18px_rgba(139,92,246,0.15)]'
+                    : 'bg-slate-800/80 border-slate-600/50'
+                }`}
         >
-            {/* Question box */}
-            <div className="w-full max-w-sm">
-                <div className="bg-gradient-to-br from-green-500/10 via-[#0f172a] to-blue-500/10 border border-green-500/30 rounded-2xl px-6 py-5 text-center shadow-[0_8px_30px_rgb(0,0,0,0.12)] shadow-green-900/10 backdrop-blur-sm transition-all hover:border-green-500/50">
-                    <div className="flex items-center justify-center gap-2 mb-2">
-                        <HelpCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
-                        <p className="text-xs font-bold text-gray-300 uppercase tracking-widest">Decision</p>
-                    </div>
-                    <p className="text-sm font-semibold text-white leading-relaxed">{node.question}</p>
-                </div>
-            </div>
-
-            {/* Connector down */}
-            <div className="relative h-8 w-px bg-gray-600 flex flex-col justify-end items-center">
-                <div className="w-2 h-2 border-b-2 border-r-2 border-gray-600 transform rotate-45 translate-y-1"></div>
-            </div>
-
-            {/* Branches */}
-            <div className="flex w-full gap-8 items-start relative px-4">
-                {/* Horizontal branch line connecting both sides */}
-                <div className="absolute top-4 left-[25%] right-[25%] h-px bg-gray-700 -z-10" />
-
-                {/* YES branch */}
-                <div className="flex-1 flex flex-col items-center gap-0">
-                    {/* Branch label */}
-                    <button
-                        onClick={() => setExpandedYes((v) => !v)}
-                        className="flex items-center gap-2 bg-green-600/20 border border-green-500/40 rounded-xl px-4 py-2 text-xs font-bold text-green-400 hover:bg-green-600/30 hover:border-green-500 transition-all shadow-[0_0_15px_rgba(34,197,94,0.15)] z-10"
-                    >
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        YES
-                        {!yesIsLeaf && (expandedYes ? <ChevronDown className="w-3.5 h-3.5 ml-1" /> : <ChevronRight className="w-3.5 h-3.5 ml-1" />)}
-                    </button>
-
-                    {/* Connector */}
-                    <div className="relative h-6 w-px bg-green-500/40 flex flex-col justify-end items-center">
-                        <div className="w-1.5 h-1.5 border-b-2 border-r-2 border-green-500/40 transform rotate-45 translate-y-0.5"></div>
-                    </div>
-
-                    {/* Content */}
-                    <AnimatePresence>
-                        {expandedYes && (
-                            <motion.div
-                                initial={{ opacity: 0, height: 0 }}
-                                animate={{ opacity: 1, height: 'auto' }}
-                                exit={{ opacity: 0, height: 0 }}
-                                className="w-full"
-                            >
-                                {yesIsLeaf ? (
-                                    <div className="bg-green-500/10 border border-green-500/30 rounded-2xl px-5 py-4 text-center max-w-[280px] shadow-lg shadow-green-900/10">
-                                        <div className="flex items-center justify-center mb-2">
-                                            <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center">
-                                                <CheckCircle2 className="w-4 h-4 text-green-400" />
-                                            </div>
-                                        </div>
-                                        <p className="text-sm font-medium text-green-300 leading-relaxed">
-                                            {(node.yes as { action: string }).action}
-                                        </p>
-                                    </div>
-                                ) : (
-                                    <div className="pl-1">
-                                        <ApiTreeNode node={node.yes as ApiDecisionTree} depth={depth + 1} />
-                                    </div>
-                                )}
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
-                </div>
-
-                <div className="flex-1 flex flex-col items-center gap-0">
-                    <button
-                        onClick={() => setExpandedNo((v) => !v)}
-                        className="flex items-center gap-2 bg-[#0f172a] border border-gray-600 rounded-xl px-4 py-2 text-xs font-bold text-gray-300 hover:bg-gray-800 hover:text-white transition-all shadow-lg z-10"
-                    >
-                        <AlertCircle className="w-3.5 h-3.5" />
-                        NO
-                        {!noIsLeaf && (expandedNo ? <ChevronDown className="w-3.5 h-3.5 ml-1" /> : <ChevronRight className="w-3.5 h-3.5 ml-1" />)}
-                    </button>
-
-                    <div className="relative h-6 w-px bg-gray-600 flex flex-col justify-end items-center">
-                        <div className="w-1.5 h-1.5 border-b-2 border-r-2 border-gray-600 transform rotate-45 translate-y-0.5"></div>
-                    </div>
-
-                    <AnimatePresence>
-                        {expandedNo && (
-                            <motion.div
-                                initial={{ opacity: 0, height: 0 }}
-                                animate={{ opacity: 1, height: 'auto' }}
-                                exit={{ opacity: 0, height: 0 }}
-                                className="w-full"
-                            >
-                                {noIsLeaf ? (
-                                    <div className="bg-[#0f172a]/80 border border-gray-700 rounded-2xl px-5 py-4 text-center max-w-[280px] shadow-lg">
-                                        <div className="flex items-center justify-center mb-2">
-                                            <div className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center">
-                                                <AlertCircle className="w-4 h-4 text-gray-400" />
-                                            </div>
-                                        </div>
-                                        <p className="text-sm font-medium text-gray-300 leading-relaxed">
-                                            {(node.no as { action: string }).action}
-                                        </p>
-                                    </div>
-                                ) : (
-                                    <div className="pl-1">
-                                        <ApiTreeNode node={node.no as ApiDecisionTree} depth={depth + 1} />
-                                    </div>
-                                )}
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
-                </div>
+            <div className="flex items-start gap-1.5">
+                {isDecision
+                    ? <HelpCircle className="w-3.5 h-3.5 text-violet-400 flex-shrink-0 mt-0.5" />
+                    : <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0 mt-0.5" />
+                }
+                <p className="text-xs font-medium text-white leading-snug line-clamp-3">{ln.node.label}</p>
             </div>
         </motion.div>
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Flat-schema renderer (lib/types.ts DecisionNode array)
-// ─────────────────────────────────────────────────────────────────────────────
-function FlatTreeNode({ node, depth = 0 }: { node: DecisionNodeFlat; depth?: number }) {
-    const [expandedYes, setExpandedYes] = useState(true);
-    const [expandedNo, setExpandedNo] = useState(true);
+// ── Edge (SVG connector) ──────────────────────────────────────────────────────
+
+interface EdgeProps {
+    fromLn: LayoutNode;
+    toLn: LayoutNode;
+    condition?: 'yes' | 'no';
+    offsetX: number; // canvas offset to make coords absolute
+    offsetY: number;
+}
+
+function EdgeLine({ fromLn, toLn, condition }: EdgeProps) {
+    const x1 = fromLn.x;
+    const y1 = fromLn.y + NODE_H;
+    const x2 = toLn.x;
+    const y2 = toLn.y;
+
+    // Bezier handle height
+    const cy1 = y1 + (y2 - y1) * 0.4;
+    const cy2 = y2 - (y2 - y1) * 0.4;
+
+    const isYes = condition === 'yes';
+    const isNo = condition === 'no';
+    const color = isYes ? '#4ade80' : isNo ? '#f87171' : '#64748b';
+    const labelText = isYes ? 'YES' : isNo ? 'NO' : '';
+    const midX = (x1 + x2) / 2;
+    const midY = (y1 + y2) / 2;
 
     return (
-        <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: depth * 0.08 }}
-            className="flex flex-col items-center gap-0"
-        >
-            {/* Question */}
-            <div className="w-full max-w-sm">
-                <div className="bg-gradient-to-r from-green-500/10 to-blue-500/5 border border-green-500/30 rounded-xl px-4 py-3 text-center">
-                    <div className="flex items-center justify-center gap-2 mb-1">
-                        <HelpCircle className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />
-                        <p className="text-xs font-bold text-gray-300 uppercase tracking-wide">Decision</p>
-                    </div>
-                    <p className="text-sm font-semibold text-white leading-snug">{node.question}</p>
-                </div>
-            </div>
-
-            <div className="w-px h-5 bg-gray-700" />
-
-            <div className="flex w-full gap-3 items-start">
-                {/* YES */}
-                <div className="flex-1 flex flex-col items-center gap-0">
-                    <button
-                        onClick={() => setExpandedYes((v) => !v)}
-                        className="flex items-center gap-1.5 bg-green-600/20 border border-green-500/30 rounded-lg px-3 py-1.5 text-xs font-bold text-green-400 hover:bg-green-600/30 transition-colors"
+        <g>
+            <path
+                d={`M ${x1} ${y1} C ${x1} ${cy1}, ${x2} ${cy2}, ${x2} ${y2}`}
+                fill="none"
+                stroke={color}
+                strokeWidth={1.5}
+                strokeOpacity={0.7}
+                markerEnd="url(#arrowhead)"
+            />
+            {labelText && (
+                <>
+                    <rect
+                        x={midX - 14} y={midY - 9}
+                        width={28} height={16}
+                        rx={4} fill="#0f172a" fillOpacity={0.85}
+                    />
+                    <text
+                        x={midX} y={midY + 3}
+                        textAnchor="middle"
+                        fontSize={9}
+                        fontWeight="bold"
+                        fill={color}
+                        fontFamily="system-ui, sans-serif"
                     >
-                        <CheckCircle2 className="w-3 h-3" />
-                        YES
-                    </button>
-                    <div className="w-px h-3 bg-green-500/40" />
-                    <AnimatePresence>
-                        {expandedYes && (
-                            <motion.div
-                                initial={{ opacity: 0, height: 0 }}
-                                animate={{ opacity: 1, height: 'auto' }}
-                                exit={{ opacity: 0, height: 0 }}
-                                className="w-full"
-                            >
-                                <div className="bg-green-500/10 border border-green-500/20 rounded-xl px-3 py-2.5 text-center">
-                                    <p className="text-xs text-green-300 leading-relaxed">{node.trueAction}</p>
-                                </div>
-                                {node.children && node.children.length > 0 && (
-                                    <div className="mt-3 space-y-3">
-                                        {node.children.map((child) => (
-                                            <FlatTreeNode key={child.id} node={child} depth={depth + 1} />
-                                        ))}
-                                    </div>
-                                )}
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
-                </div>
-
-                <div className="w-px bg-gray-800 self-stretch mt-5 mx-1" />
-
-                {/* NO */}
-                <div className="flex-1 flex flex-col items-center gap-0">
-                    <button
-                        onClick={() => setExpandedNo((v) => !v)}
-                        className="flex items-center gap-1.5 bg-gray-700/60 border border-gray-600 rounded-lg px-3 py-1.5 text-xs font-bold text-gray-400 hover:bg-gray-700 transition-colors"
-                    >
-                        <AlertCircle className="w-3 h-3" />
-                        NO
-                    </button>
-                    <div className="w-px h-3 bg-gray-600" />
-                    <AnimatePresence>
-                        {expandedNo && (
-                            <motion.div
-                                initial={{ opacity: 0, height: 0 }}
-                                animate={{ opacity: 1, height: 'auto' }}
-                                exit={{ opacity: 0, height: 0 }}
-                                className="w-full"
-                            >
-                                <div className="bg-gray-800/60 border border-gray-700 rounded-xl px-3 py-2.5 text-center">
-                                    <p className="text-xs text-gray-400 leading-relaxed">{node.falseAction}</p>
-                                </div>
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
-                </div>
-            </div>
-        </motion.div>
+                        {labelText}
+                    </text>
+                </>
+            )}
+        </g>
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Public component — auto-detects schema
-// ─────────────────────────────────────────────────────────────────────────────
-export function VisualDecisionTree({ tree }: VisualDecisionTreeProps) {
+// ── Public component ──────────────────────────────────────────────────────────
+
+interface Props {
+    tree: PolicyDecisionTree | null | undefined;
+}
+
+export function VisualDecisionTree({ tree }: Props) {
     const [scale, setScale] = useState(1);
 
-    const handleZoomIn = () => setScale(s => Math.min(s + 0.15, 1.6));
-    const handleZoomOut = () => setScale(s => Math.max(s - 0.15, 0.4));
-    const handleReset = () => setScale(1);
-
-    if (!tree) {
+    if (!tree || !Array.isArray(tree.nodes) || tree.nodes.length === 0) {
         return (
             <div className="flex flex-col items-center justify-center py-12 gap-3">
                 <div className="w-12 h-12 rounded-2xl bg-gray-800/60 border border-gray-700 flex items-center justify-center">
                     <HelpCircle className="w-5 h-5 text-gray-600" />
                 </div>
-                <p className="text-sm text-gray-500">No decision tree defined.</p>
+                <p className="text-sm text-gray-500">No decision tree available.</p>
             </div>
         );
     }
 
-    // Wrap content with zoom controls and transform container
-    const Wrapper = ({ children }: { children: React.ReactNode }) => (
-        <div className="relative w-full h-full min-h-[500px] overflow-hidden bg-[#0a1120] rounded-2xl border border-gray-800/60 flex items-center justify-center group">
-            {/* Zoom Controls */}
-            <div className="absolute top-4 right-4 z-50 flex items-center gap-1 bg-[#0f172a] border border-gray-700/60 rounded-xl p-1 shadow-xl opacity-0 group-hover:opacity-100 transition-opacity">
-                <button onClick={handleZoomOut} className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-colors" title="Zoom Out">
-                    <ZoomOut className="w-4 h-4" />
+    const layout = useMemo(
+        () => computeLayout(tree.nodes, tree.edges ?? [], tree.start_node ?? tree.nodes[0]?.id),
+        [tree]
+    );
+
+    if (layout.length === 0) return null;
+
+    // Compute bounding box
+    const minX = Math.min(...layout.map(l => l.x - NODE_W / 2)) - 24;
+    const maxX = Math.max(...layout.map(l => l.x + NODE_W / 2)) + 24;
+    const minY = -24;
+    const maxY = Math.max(...layout.map(l => l.y + NODE_H)) + 40;
+    const svgW = maxX - minX;
+    const svgH = maxY - minY;
+    const ox = -minX; // offset to shift coords into positive space
+    const oy = -minY;
+
+    // Build lookup
+    const posMap = new Map<string, LayoutNode>(layout.map(l => [l.node.id, l]));
+
+    return (
+        <div className="relative w-full rounded-2xl border border-gray-800/60 bg-[#080e1a] group overflow-hidden">
+            {/* Zoom controls */}
+            <div className="absolute top-3 right-3 z-10 flex items-center gap-1 bg-[#0f172a] border border-gray-700/60 rounded-xl p-1 shadow-xl opacity-0 group-hover:opacity-100 transition-opacity">
+                <button onClick={() => setScale(s => Math.max(s - 0.15, 0.35))} className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-colors" title="Zoom Out">
+                    <ZoomOut className="w-3.5 h-3.5" />
                 </button>
-                <div className="w-px h-4 bg-gray-700" />
-                <button onClick={handleReset} className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-colors" title="Reset Zoom">
-                    <Maximize className="w-4 h-4" />
+                <div className="w-px h-3.5 bg-gray-700" />
+                <button onClick={() => setScale(1)} className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-colors" title="Reset">
+                    <Maximize className="w-3.5 h-3.5" />
                 </button>
-                <div className="w-px h-4 bg-gray-700" />
-                <button onClick={handleZoomIn} className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-colors" title="Zoom In">
-                    <ZoomIn className="w-4 h-4" />
+                <div className="w-px h-3.5 bg-gray-700" />
+                <button onClick={() => setScale(s => Math.min(s + 0.15, 1.8))} className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-colors" title="Zoom In">
+                    <ZoomIn className="w-3.5 h-3.5" />
                 </button>
             </div>
 
-            {/* Canvas */}
-            <div className="w-full h-full overflow-auto custom-scrollbar flex items-start justify-center p-8">
-                <div style={{ transform: `scale(${scale})`, transformOrigin: 'top center', transition: 'transform 0.2s ease-out' }}>
-                    {children}
+            {/* Scrollable canvas */}
+            <div className="w-full overflow-auto max-h-[640px] p-4 pr-14">
+                <div
+                    style={{
+                        transform: `scale(${scale})`,
+                        transformOrigin: 'top center',
+                        transition: 'transform 0.2s ease',
+                        width: svgW,
+                        height: svgH,
+                        position: 'relative',
+                        margin: '0 auto',
+                    }}
+                >
+                    {/* SVG edges layer */}
+                    <svg
+                        width={svgW}
+                        height={svgH}
+                        style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none', overflow: 'visible' }}
+                    >
+                        <defs>
+                            <marker id="arrowhead" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                                <path d="M0,0 L0,6 L6,3 z" fill="#64748b" />
+                            </marker>
+                        </defs>
+                        {(tree.edges ?? []).map((e, i) => {
+                            const from = posMap.get(e.from);
+                            const to = posMap.get(e.to);
+                            if (!from || !to) return null;
+                            // Shift by offset
+                            const shifted: { fromLn: LayoutNode; toLn: LayoutNode } = {
+                                fromLn: { ...from, x: from.x + ox, y: from.y + oy },
+                                toLn: { ...to, x: to.x + ox, y: to.y + oy },
+                            };
+                            return (
+                                <EdgeLine
+                                    key={i}
+                                    fromLn={shifted.fromLn}
+                                    toLn={shifted.toLn}
+                                    condition={e.condition}
+                                    offsetX={ox}
+                                    offsetY={oy}
+                                />
+                            );
+                        })}
+                    </svg>
+
+                    {/* Node cards layer */}
+                    {layout.map((ln, i) => (
+                        <NodeCard
+                            key={ln.node.id}
+                            ln={{ ...ln, x: ln.x + ox, y: ln.y + oy }}
+                            index={i}
+                        />
+                    ))}
                 </div>
+            </div>
+
+            {/* Legend */}
+            <div className="flex items-center gap-4 px-5 py-2.5 border-t border-gray-800/60 text-[10px] text-gray-500">
+                <span className="flex items-center gap-1.5"><HelpCircle className="w-3 h-3 text-violet-400" /> Decision</span>
+                <span className="flex items-center gap-1.5"><CheckCircle2 className="w-3 h-3 text-emerald-400" /> Action</span>
+                <span className="flex items-center gap-1.5"><span className="inline-block w-5 h-0.5 bg-green-400/70" /> YES</span>
+                <span className="flex items-center gap-1.5"><span className="inline-block w-5 h-0.5 bg-red-400/70" /> NO</span>
             </div>
         </div>
     );
-
-    // Array → flat schema
-    if (Array.isArray(tree)) {
-        if (tree.length === 0) {
-            return (
-                <div className="flex flex-col items-center justify-center py-12 gap-3">
-                    <HelpCircle className="w-8 h-8 text-gray-600" />
-                    <p className="text-sm text-gray-500">No decision tree defined.</p>
-                </div>
-            );
-        }
-        return (
-            <Wrapper>
-                <div className="space-y-12">
-                    {tree.map((node) => (
-                        <FlatTreeNode key={node.id} node={node} />
-                    ))}
-                </div>
-            </Wrapper>
-        );
-    }
-
-    // Object → API schema
-    if (isApiTree(tree)) {
-        return (
-            <Wrapper>
-                <ApiTreeNode node={tree} />
-            </Wrapper>
-        );
-    }
-
-    return (
-        <p className="text-sm text-gray-500 text-center py-8">Unrecognised decision tree format.</p>
-    );
 }
+
+// Legacy export alias for any components that import ApiDecisionTree directly
+export type { DecisionTreeNode, DecisionTreeEdge };

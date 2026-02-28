@@ -13,74 +13,176 @@ function getGeminiClient() {
 
 // ── Output structure ──────────────────────────────────────────────────────────
 
+// ── Graph types ───────────────────────────────────────────────────────────────
+
+export interface GraphNode {
+    id: string;
+    label: string;
+    type: 'start' | 'process' | 'decision' | 'end';
+}
+
+export interface GraphEdge {
+    source: string;
+    target: string;
+    label?: 'YES' | 'NO';
+}
+
+export interface PolicyGraph {
+    nodes: GraphNode[];
+    edges: GraphEdge[];
+}
+
+// ── Flat decision tree types (matches firebase.ts) ────────────────────────────
+import type { DecisionTreeNode, DecisionTreeEdge, PolicyRule } from './firebase';
+
 export interface GeneratedPolicy {
     workflow: PolicyWorkflowStep[];
     decision_tree: PolicyDecisionTree;
     checklist: string[];
+    graph: PolicyGraph;
+    rules: PolicyRule[];
 }
-
-// ── Decision tree node types ──────────────────────────────────────────────────
-
-/** A leaf node — always has "action", never "question". */
-interface LeafNode {
-    action: string;
-}
-
-/** An internal node — always has "question", "yes", and "no". */
-interface InternalNode {
-    question: string;
-    yes: DecisionNode;
-    no: DecisionNode;
-}
-
-type DecisionNode = InternalNode | LeafNode;
 
 // ── System prompt ─────────────────────────────────────────────────────────────
 
-const SYSTEM_PROMPT = `You are an AI system that converts government policy text into structured, executable outputs for field officers.
+const SYSTEM_PROMPT = `You are an expert policy analyst AI. You receive raw government policy text and convert it into precise, deeply structured operational outputs for field officers.
 
-Analyze the following policy carefully and generate outputs based ONLY on its content.
+STEP 1 — EXTRACT (do this silently before generating JSON):
+• ENTITIES: every actor, department, role, document, or organization mentioned
+• CONDITIONS: every IF/ELSE rule, eligibility check, threshold, deadline, or exception
+• ACTIONS: every concrete procedure, task, validation step, or compliance requirement
 
-Do NOT generate generic workflows. The output MUST reflect the specific rules, entities, and conditions mentioned in the policy.
-
-Before generating output, extract the following from the policy text:
-- ENTITIES: Departments, actors, roles, or organizations mentioned
-- CONDITIONS: If/else rules, eligibility checks, thresholds, or decision points
-- ACTIONS: Concrete steps, procedures, or tasks described
-
-Use those extracted elements to populate the JSON below. Every workflow step, decision branch, and checklist item must trace back to something in the policy text.
-
-Return ONLY valid JSON in this exact format — no extra text, no explanation, no markdown, no code blocks:
+STEP 2 — GENERATE the following JSON exactly. Return ONLY valid JSON. No markdown, no explanation, no preamble.
 
 {
   "workflow": [
     { "step": "string", "description": "string" }
   ],
   "decision_tree": {
-    "question": "string",
-    "yes": { "action": "string" },
-    "no": { "action": "string" }
+    "start_node": "n1",
+    "nodes": [
+      { "id": "n1", "type": "decision", "label": "Are all required documents submitted?" },
+      { "id": "n2", "type": "decision", "label": "Do documents meet compliance standards?" },
+      { "id": "n3", "type": "decision", "label": "Is safety clearance required?" },
+      { "id": "n4", "type": "decision", "label": "Can compliance issues be corrected?" },
+      { "id": "n5", "type": "decision", "label": "Can applicant provide missing documents?" },
+      { "id": "n6", "type": "action",   "label": "Forward to Safety Department" },
+      { "id": "n7", "type": "action",   "label": "Approve application" },
+      { "id": "n8", "type": "action",   "label": "Issue 30-day correction notice" },
+      { "id": "n9", "type": "action",   "label": "Reject – compliance failure" },
+      { "id": "n10", "type": "action",  "label": "Resume review with complete file" },
+      { "id": "n11", "type": "action",  "label": "Mark application abandoned" }
+    ],
+    "edges": [
+      { "from": "n1",  "to": "n2",  "condition": "yes" },
+      { "from": "n1",  "to": "n5",  "condition": "no" },
+      { "from": "n2",  "to": "n3",  "condition": "yes" },
+      { "from": "n2",  "to": "n4",  "condition": "no" },
+      { "from": "n3",  "to": "n6",  "condition": "yes" },
+      { "from": "n3",  "to": "n7",  "condition": "no" },
+      { "from": "n4",  "to": "n8",  "condition": "yes" },
+      { "from": "n4",  "to": "n9",  "condition": "no" },
+      { "from": "n5",  "to": "n10", "condition": "yes" },
+      { "from": "n5",  "to": "n11", "condition": "no" }
+    ]
   },
   "checklist": [
     { "task": "string", "completed": false }
+  ],
+  "graph": {
+    "nodes": [
+      { "id": "start", "label": "Start", "type": "start" },
+      { "id": "step1", "label": "Receive Application", "type": "process" },
+      { "id": "dec1", "label": "Documents complete?", "type": "decision" },
+      { "id": "end", "label": "End", "type": "end" }
+    ],
+    "edges": [
+      { "source": "start", "target": "step1" },
+      { "source": "step1", "target": "dec1" },
+      { "source": "dec1", "target": "end", "label": "YES" },
+      { "source": "dec1", "target": "step1", "label": "NO" }
+    ]
+  },
+  "rules": [
+    { "id": "rule_1", "field": "age",         "operator": ">=", "value": 18,   "description": "Applicant must be at least 18 years old" },
+    { "id": "rule_2", "field": "income",      "operator": ">=", "value": 0,    "description": "Income must be non-negative" },
+    { "id": "rule_3", "field": "citizen",     "operator": "==", "value": true, "description": "Applicant must be a citizen" }
   ]
 }
 
-Strict rules:
-- Different policy inputs MUST produce different outputs
-- Every step must directly reference a rule, entity, or action from the input
-- Decision tree questions must come from real conditions in the policy text
-- Checklist tasks must be actionable for the entity performing them
-- If the policy mentions waste collection → output must be about waste collection
-- If the policy mentions construction permits → output must be about permits
-- ONLY JSON`;
+The above JSON is ONLY a structural template. Replace ALL placeholder strings with content derived exclusively from the input policy.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WORKFLOW RULES:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Minimum 6–10 sequential steps; more for complex policies
+• Every step must name the responsible department or actor
+• "step" = short action verb phrase (e.g. "Verify identity documents")
+• "description" = who does what, referencing policy-specific rules, deadlines, and entities
+• NEVER generate generic steps ("Submit form", "Complete process", "Proceed")
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DECISION TREE RULES (CRITICAL — read carefully):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• MINIMUM 3–5 levels of depth; scale with policy complexity
+• EVERY question node MUST have both "yes" AND "no" branches
+• Most branches must lead to ANOTHER question (not an immediate action)
+• Only the deepest nodes produce a final { "action": "..." }
+• Actions must be specific outcomes (not "proceed", "continue", "done")
+• Model real-world validation chains: receive → verify → check → validate → decide → approve/reject/escalate
+• Include negative paths: rejection reasons, correction notices, escalation routes, hold states
+• Schema rule: every node is EITHER { question, yes, no } OR { action } — never both, never neither
+• DO NOT copy the template example — generate from the policy content
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CHECKLIST RULES:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Minimum 8–12 items; each maps to a workflow step
+• Each item = a concrete, verifiable action (a field officer can physically tick it off)
+• Use document names, entities, thresholds from the policy
+• NEVER generic items ("Check documents", "Verify info")
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+GRAPH RULES:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Keep graph SIMPLE and clear — maximum 10–15 nodes
+• Exactly ONE start node (type: "start") and ONE end node (type: "end")
+• Process nodes (type: "process") = sequential workflow steps
+• Decision nodes (type: "decision") = key branching points only
+• All node IDs must be unique strings; no spaces
+• Edge from a decision node MUST have label "YES" or "NO"
+• Sequential edges (no decision) must NOT have a label
+• Graph must be fully connected — no orphan nodes
+• Do NOT add position — the frontend handles layout
+• No extra fields on any node or edge
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+RULES RULES (NEW FIELD):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Extract EVERY specific threshold, eligibility condition, numeric limit, or boolean requirement stated in the policy
+• Each rule must be atomic (one condition per rule)
+• field = the data field to check (e.g. "age", "income", "citizen", "documents_submitted")
+• operator = one of: >, <, >=, <=, ==, !=
+• value = the threshold or required value (number, boolean, or string)
+• description = plain-English explanation of the condition
+• If no specific conditions can be extracted → return empty array []
+• NEVER invent rules not supported by the policy text
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+GLOBAL RULES:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Output ONLY valid JSON — absolutely no text outside the JSON object
+• All five sections must be fully populated — never skip any
+• Different policy inputs must always produce different outputs
+• NEVER copy, paraphrase, or recycle the template example above`;
 
 
 // ── JSON extraction ───────────────────────────────────────────────────────────
 
+
 function extractJson(raw: string): string {
     // Strip markdown code fences
-    const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+    const fenced = raw.match(/```(?: json) ?\s * ([\s\S] *?)```/);
     if (fenced) return fenced[1].trim();
     // Extract first complete {...} block
     const braceStart = raw.indexOf('{');
@@ -91,81 +193,6 @@ function extractJson(raw: string): string {
     return raw.trim();
 }
 
-// ── Decision tree sanitizer ───────────────────────────────────────────────────
-
-/**
- * Recursively validates and repairs a decision tree node.
- *
- * - If depth ≥ maxDepth → force into a leaf (action)
- * - If node has "question" → ensure it's an internal node with valid yes/no
- * - If node has "action" → ensure it's a leaf with a non-empty string
- * - Otherwise → generate a sensible fallback
- */
-function sanitizeDecisionNode(
-    node: unknown,
-    depth: number = 1,
-    maxDepth: number = 3
-): DecisionNode {
-
-    // At max depth → always a leaf
-    if (depth >= maxDepth) {
-        if (node && typeof node === 'object') {
-            const n = node as Record<string, unknown>;
-            if (typeof n.action === 'string' && n.action.trim()) {
-                return { action: n.action.trim() };
-            }
-            if (typeof n.question === 'string' && n.question.trim()) {
-                // Collapse to leaf: summarise the question as an action
-                return { action: `Proceed with: ${n.question.trim()}` };
-            }
-        }
-        return { action: 'Complete the required steps and proceed.' };
-    }
-
-    if (!node || typeof node !== 'object') {
-        return { action: 'Complete the required steps and proceed.' };
-    }
-
-    const n = node as Record<string, unknown>;
-
-    // ── Internal node ────────────────────────────────────────────────────────
-    if (typeof n.question === 'string' && n.question.trim()) {
-        const question = n.question.trim();
-
-        const yes = sanitizeDecisionNode(n.yes, depth + 1, maxDepth);
-        const no = sanitizeDecisionNode(n.no, depth + 1, maxDepth);
-
-        return { question, yes, no };
-    }
-
-    // ── Leaf node ────────────────────────────────────────────────────────────
-    if (typeof n.action === 'string' && n.action.trim()) {
-        return { action: n.action.trim() };
-    }
-
-    // ── Unknown shape — try to recover ───────────────────────────────────────
-    // Maybe it's a nested object with one key as the question text
-    const keys = Object.keys(n);
-    if (keys.length > 0) {
-        const firstKey = keys[0];
-        const firstVal = n[firstKey];
-        if (typeof firstKey === 'string' && firstKey.length > 5) {
-            // Use the key as a question if it looks sentence-like
-            const innerYes = sanitizeDecisionNode(
-                typeof firstVal === 'object' ? firstVal : null,
-                depth + 1,
-                maxDepth
-            );
-            return {
-                question: firstKey,
-                yes: innerYes,
-                no: { action: 'Follow the standard process.' },
-            };
-        }
-    }
-
-    return { action: 'Complete the required steps and proceed.' };
-}
 
 /**
  * Validates the full GeneratedPolicy shape.
@@ -181,20 +208,107 @@ function validateShape(obj: unknown): obj is { workflow: unknown[]; decision_tre
     );
 }
 
+// ── Graph sanitizer ────────────────────────────────────────────────────────────
+
+function sanitizeGraph(raw: unknown, _policyTitle: string): PolicyGraph {
+    const fallback: PolicyGraph = {
+        nodes: [
+            { id: 'start', label: 'Start', type: 'start' },
+            { id: 'end', label: 'End', type: 'end' },
+        ],
+        edges: [{ source: 'start', target: 'end' }],
+    };
+
+    if (!raw || typeof raw !== 'object') return fallback;
+    const g = raw as Record<string, unknown>;
+    if (!Array.isArray(g.nodes) || !Array.isArray(g.edges)) return fallback;
+
+    // 1. Deduplicate node IDs & normalise shapes
+    const seenIds = new Set<string>();
+    const validTypes = ['start', 'process', 'decision', 'end'];
+    const nodes: GraphNode[] = (g.nodes as unknown[])
+        .filter((n): n is Record<string, unknown> => !!n && typeof n === 'object')
+        .map((n, i) => {
+            const id = String(n.id ?? `node_${i} `).trim() || `node_${i} `;
+            const label = String(n.label ?? 'Step').trim().split(' ').slice(0, 6).join(' ') || 'Step';
+            const rawType = String(n.type ?? 'process');
+            const type = validTypes.includes(rawType)
+                ? rawType as GraphNode['type']
+                : rawType === 'step' ? 'process' : 'process';
+            return { id, label, type };
+        })
+        .filter(n => {
+            if (seenIds.has(n.id)) return false;
+            seenIds.add(n.id);
+            return true;
+        });
+
+    if (nodes.length === 0) return fallback;
+
+    // 2. Enforce at least 1 start and 1 end
+    const starts = nodes.filter(n => n.type === 'start');
+    const ends = nodes.filter(n => n.type === 'end');
+    if (starts.length === 0) nodes[0].type = 'start';
+    else if (starts.length > 1) starts.slice(1).forEach(n => { n.type = 'process'; });
+    if (ends.length === 0) nodes[nodes.length - 1].type = 'end';
+    else if (ends.length > 1) ends.slice(0, -1).forEach(n => { n.type = 'process'; });
+
+    // 3. Sanitise edges — accept both source/target and from/to for compatibility
+    const rawEdges: GraphEdge[] = (g.edges as unknown[])
+        .filter((e): e is Record<string, unknown> => !!e && typeof e === 'object')
+        .map(e => {
+            const source = String(e.source ?? e.from ?? '').trim();
+            const target = String(e.target ?? e.to ?? '').trim();
+            const rawLabel = String(e.label ?? e.condition ?? '').trim().toUpperCase();
+            const label: 'YES' | 'NO' | undefined =
+                rawLabel === 'YES' ? 'YES' : rawLabel === 'NO' ? 'NO' : undefined;
+            return { source, target, ...(label ? { label } : {}) };
+        })
+        .filter(e => seenIds.has(e.source) && seenIds.has(e.target) && e.source !== e.target);
+
+    // 4. Remove orphan nodes
+    let edges = rawEdges;
+    const forcedStart = nodes.find(n => n.type === 'start')!;
+    const forcedEnd = nodes.find(n => n.type === 'end')!;
+    const referenced = new Set<string>(edges.flatMap(e => [e.source, e.target]));
+    referenced.add(forcedStart.id);
+    referenced.add(forcedEnd.id);
+    const connectedNodes = nodes.filter(n => referenced.has(n.id));
+    if (connectedNodes.length < nodes.length) {
+        const cIds = new Set(connectedNodes.map(n => n.id));
+        edges = edges.filter(e => cIds.has(e.source) && cIds.has(e.target));
+    }
+
+    // 5. Ensure at least 1 edge — stitch chain if needed
+    if (edges.length === 0) {
+        const chain = connectedNodes.length > 0 ? connectedNodes : nodes;
+        edges = chain.slice(0, -1).map((n, i) => ({ source: n.id, target: chain[i + 1].id }));
+        if (edges.length === 0) return fallback;
+    }
+
+    return { nodes: connectedNodes.length > 0 ? connectedNodes : nodes, edges };
+}
+
+
 /**
- * Returns a descriptive fallback decision tree when Gemini produces nothing useful.
+ * Returns a minimal valid flat decision tree used when Gemini output is unusable.
  */
-function fallbackDecisionTree(policyTitle: string): DecisionNode {
+function fallbackFlatDecisionTree(policyTitle: string): PolicyDecisionTree {
     return {
-        question: `Does the officer have all required documents for "${policyTitle}"?`,
-        yes: {
-            question: 'Have all compliance checks been completed?',
-            yes: { action: 'Approve and proceed to the next stage.' },
-            no: { action: 'Complete the remaining compliance checks before proceeding.' },
-        },
-        no: {
-            action: 'Collect missing documents before proceeding.',
-        },
+        start_node: 'n1',
+        nodes: [
+            { id: 'n1', type: 'decision', label: `Do documents exist for "${policyTitle}"?` },
+            { id: 'n2', type: 'decision', label: 'Have compliance checks been completed?' },
+            { id: 'n3', type: 'action', label: 'Approve and proceed to next stage' },
+            { id: 'n4', type: 'action', label: 'Complete remaining compliance checks' },
+            { id: 'n5', type: 'action', label: 'Collect missing documents first' },
+        ],
+        edges: [
+            { from: 'n1', to: 'n2', condition: 'yes' },
+            { from: 'n1', to: 'n5', condition: 'no' },
+            { from: 'n2', to: 'n3', condition: 'yes' },
+            { from: 'n2', to: 'n4', condition: 'no' },
+        ],
     };
 }
 
@@ -222,7 +336,7 @@ Policy Input:
 TITLE: ${input.title}
 DESCRIPTION: ${input.description || '(not provided)'}
 NOTES: ${input.notes || '(none)'}
-FULL TEXT: ${input.policyText || '(see attached PDF)'}`;
+FULL TEXT: ${input.policyText || '(see attached PDF)'} `;
 
     let raw: string;
     try {
@@ -243,7 +357,7 @@ FULL TEXT: ${input.policyText || '(see attached PDF)'}`;
         raw = result.response.text();
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        throw new Error(`Gemini API error: ${message}`);
+        throw new Error(`Gemini API error: ${message} `);
     }
 
     // ── Log raw AI response ──────────────────────────────────────────────────
@@ -263,7 +377,7 @@ FULL TEXT: ${input.policyText || '(see attached PDF)'}`;
     if (parsed === null) {
         // Retry once with an explicit nudge
         console.warn('[Gemini] First parse failed — retrying with a stricter prompt');
-        const retryPrompt = `${prompt}\n\nIMPORTANT: Your previous response could not be parsed as JSON. Return ONLY raw JSON — no markdown, no text, no code fences.`;
+        const retryPrompt = `${prompt} \n\nIMPORTANT: Your previous response could not be parsed as JSON.Return ONLY raw JSON — no markdown, no text, no code fences.`;
         try {
             const retryResult = await model.generateContent(retryPrompt);
             const retryRaw = retryResult.response.text();
@@ -288,7 +402,7 @@ FULL TEXT: ${input.policyText || '(see attached PDF)'}`;
     const workflow: PolicyWorkflowStep[] = rawWorkflow
         .filter((s): s is Record<string, unknown> => !!s && typeof s === 'object')
         .map((s) => ({
-            step: String(s.step ?? s.title ?? 'Step').replace(/^\d+$/, (n) => `Step ${n}`).trim(),
+            step: String(s.step ?? s.title ?? 'Step').replace(/^\d+$/, (n) => `Step ${n} `).trim(),
             description: String(s.description ?? '').trim(),
         }))
         .filter((s) => s.step.length > 0);
@@ -300,27 +414,38 @@ FULL TEXT: ${input.policyText || '(see attached PDF)'}`;
         );
     }
 
-    // ── Sanitize decision tree ───────────────────────────────────────────────
-    // Accept decision_tree (object) or decisionTree (array).
+    // ── Sanitize decision tree (flat graph format) ───────────────────────────
     const rawTree = parsedObj.decision_tree ?? parsedObj.decisionTree;
-
-    let decision_tree: DecisionNode;
+    let decision_tree: PolicyDecisionTree;
     try {
-        let treeInput: unknown = rawTree;
-        if (Array.isArray(rawTree) && rawTree.length > 0) {
-            const first = rawTree[0] as Record<string, unknown>;
-            treeInput = {
-                question: first.question ?? 'Does this policy apply?',
-                yes: typeof first.yes === 'string' ? { action: first.yes } : first.yes ?? { action: 'Proceed.' },
-                no: typeof first.no === 'string' ? { action: first.no } : first.no ?? { action: 'Do not proceed.' },
-            };
+        const rt = rawTree as Record<string, unknown>;
+        const rawNodes = Array.isArray(rt?.nodes) ? rt.nodes as Record<string, unknown>[] : [];
+        const rawEdges = Array.isArray(rt?.edges) ? rt.edges as Record<string, unknown>[] : [];
+        const startNode = typeof rt?.start_node === 'string' ? rt.start_node : (rawNodes[0]?.id as string ?? 'n1');
+
+        const nodes: DecisionTreeNode[] = rawNodes
+            .filter(n => typeof n.id === 'string' && typeof n.label === 'string')
+            .map(n => ({
+                id: String(n.id),
+                type: n.type === 'action' ? 'action' : 'decision',
+                label: String(n.label),
+            }));
+
+        const edges: DecisionTreeEdge[] = rawEdges
+            .filter(e => typeof e.from === 'string' && typeof e.to === 'string')
+            .map(e => ({
+                from: String(e.from),
+                to: String(e.to),
+                condition: e.condition === 'yes' ? 'yes' : e.condition === 'no' ? 'no' : undefined,
+            }));
+
+        if (nodes.length >= 2 && edges.length >= 1) {
+            decision_tree = { nodes, edges, start_node: startNode };
+        } else {
+            decision_tree = fallbackFlatDecisionTree(workflow[0]?.step ?? 'this policy');
         }
-        const sanitized = sanitizeDecisionNode(treeInput, 1, 3);
-        decision_tree = 'action' in sanitized
-            ? fallbackDecisionTree(workflow[0]?.step ?? 'this policy')
-            : sanitized;
     } catch {
-        decision_tree = fallbackDecisionTree(workflow[0]?.step ?? 'this policy');
+        decision_tree = fallbackFlatDecisionTree(workflow[0]?.step ?? 'this policy');
     }
 
     // ── Sanitize checklist ───────────────────────────────────────────────────
@@ -341,5 +466,22 @@ FULL TEXT: ${input.policyText || '(see attached PDF)'}`;
         checklist.push('Review policy document', 'Verify all required documents', 'Confirm compliance');
     }
 
-    return { workflow, decision_tree: decision_tree as PolicyDecisionTree, checklist };
+    // ── Sanitize graph ────────────────────────────────────────────────────────────
+    const graph = sanitizeGraph(parsedObj.graph, input.title);
+
+    // ── Sanitize rules ───────────────────────────────────────────────────────────
+    const validOperators = ['>', '<', '>=', '<=', '==', '!='];
+    const rawRules = Array.isArray(parsedObj.rules) ? parsedObj.rules as unknown[] : [];
+    const rules: PolicyRule[] = rawRules
+        .filter((r): r is Record<string, unknown> => !!r && typeof r === 'object')
+        .filter(r => typeof r.id === 'string' && typeof r.field === 'string' && validOperators.includes(String(r.operator)))
+        .map((r, i) => ({
+            id: String(r.id ?? `rule_${i + 1}`),
+            field: String(r.field),
+            operator: String(r.operator) as PolicyRule['operator'],
+            value: typeof r.value === 'number' ? r.value : typeof r.value === 'boolean' ? r.value : String(r.value ?? ''),
+            description: String(r.description ?? r.field),
+        }));
+
+    return { workflow, decision_tree, checklist, graph, rules };
 }

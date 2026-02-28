@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { WorkflowTimeline } from '@/components/shared/WorkflowTimeline'
 import { VisualDecisionTree } from '@/components/shared/VisualDecisionTree'
 import { InteractiveChecklist } from '@/components/shared/InteractiveChecklist'
+import { WorkflowGraph } from '@/components/shared/WorkflowGraph'
 import {
   Zap,
   CheckCircle2,
@@ -21,20 +22,28 @@ import {
   Share2,
   Save,
   Clock,
+  Network,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { toast } from 'sonner'
 import { exportPolicyToPDF } from '@/lib/export'
 
-import { PolicyChecklistItem, PolicyDecisionTree, PolicyWorkflowStep } from '@/lib/firebase'
+import { PolicyChecklistItem, PolicyDecisionTree, PolicyWorkflowStep, PolicyRule } from '@/lib/firebase'
 
 // ─── Types for API response ───────────────────────────────────────────────────
+
+interface PolicyGraph {
+  nodes: Array<{ id: string; label: string; type: 'start' | 'process' | 'decision' | 'end' }>
+  edges: Array<{ source: string; target: string; label?: 'YES' | 'NO' }>
+}
 
 interface GeneratedOutput {
   id: string;
   workflow: PolicyWorkflowStep[];
   decision_tree: PolicyDecisionTree;
   checklist: PolicyChecklistItem[];
+  graph: PolicyGraph | null;
+  rules: PolicyRule[];
 }
 
 
@@ -134,8 +143,10 @@ export function GeneratorPageContent() {
       setOutput({
         id: policy.id,
         workflow: policy.workflow ?? [],
-        decision_tree: policy.decision_tree ?? { question: '', yes: { action: '' }, no: { action: '' } },
+        decision_tree: policy.decision_tree ?? { nodes: [], edges: [], start_node: '' },
         checklist: policy.checklist ?? [],
+        graph: (policy.graph ?? null) as PolicyGraph | null,
+        rules: policy.rules ?? [],
       })
 
     } catch (err) {
@@ -169,6 +180,7 @@ export function GeneratorPageContent() {
           workflow: output.workflow,
           decision_tree: output.decision_tree,
           checklist: output.checklist,
+          rules: output.rules ?? [],
           userId: user.uid,
         }),
       });
@@ -581,7 +593,7 @@ export function GeneratorPageContent() {
 
 
                 <Tabs defaultValue="workflow" className="w-full">
-                  <TabsList className="grid w-full grid-cols-3 bg-[#0f172a] border border-gray-800 rounded-xl p-1 mb-6 relative">
+                  <TabsList className="grid w-full grid-cols-4 bg-[#0f172a] border border-gray-800 rounded-xl p-1 mb-6 relative">
                     <TabsTrigger
                       value="workflow"
                       className="rounded-lg text-xs z-10 data-[state=active]:text-white transition-colors py-2"
@@ -602,6 +614,13 @@ export function GeneratorPageContent() {
                     >
                       <CheckCircle2 className="w-3.5 h-3.5 mr-2" />
                       Checklist
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="graph"
+                      className="rounded-lg text-xs z-10 data-[state=active]:text-white transition-colors py-2"
+                    >
+                      <Network className="w-3.5 h-3.5 mr-2" />
+                      Graph
                     </TabsTrigger>
                   </TabsList>
 
@@ -669,6 +688,28 @@ export function GeneratorPageContent() {
                         policyId={output?.id}
                         onUpdate={(updatedChecklist) => setOutput(prev => prev ? { ...prev, checklist: updatedChecklist } : null)}
                       />
+                    </motion.div>
+                  </TabsContent>
+
+                  {/* ── TAB 4: Workflow Graph ──────────────────────────── */}
+                  <TabsContent value="graph" className="mt-0 outline-none">
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -10 }}
+                      transition={{ duration: 0.3 }}
+                      className="bg-[#0f172a] border border-gray-800 rounded-2xl p-6"
+                    >
+                      <div className="flex items-center gap-3 mb-6 pb-4 border-b border-gray-800/60">
+                        <div className="p-1.5 bg-green-500/10 rounded-lg">
+                          <Network className="w-4 h-4 text-green-500" />
+                        </div>
+                        <h3 className="text-sm font-semibold text-white">Workflow Graph</h3>
+                        <span className="ml-auto text-xs text-gray-600">
+                          {output?.graph?.nodes.length ?? 0} nodes · {output?.graph?.edges.length ?? 0} edges
+                        </span>
+                      </div>
+                      <WorkflowGraph graph={output?.graph ?? null} />
                     </motion.div>
                   </TabsContent>
                 </Tabs>

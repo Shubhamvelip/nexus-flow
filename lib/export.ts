@@ -93,59 +93,50 @@ export function exportPolicyToPDF({
     }
 
     // ── Decision Tree ──
-    if (decisionTree) {
+    if (decisionTree && decisionTree.nodes && decisionTree.nodes.length > 0) {
         addTextLines(['Decision Tree'], 16, true);
         addSpacing(3);
 
-        const printTree = (node: PolicyDecisionTree | { action: string }, depth: number) => {
+        // Build adjacency for BFS display
+        const adj = new Map<string, Array<{ to: string; condition?: string }>>();
+        for (const e of (decisionTree.edges ?? [])) {
+            if (!adj.has(e.from)) adj.set(e.from, []);
+            adj.get(e.from)!.push({ to: e.to, condition: e.condition });
+        }
+        const nodeMap = new Map(decisionTree.nodes.map(n => [n.id, n]));
+
+        // BFS order
+        const visited = new Set<string>();
+        const queue: Array<{ id: string; depth: number; prefix: string }> = [
+            { id: decisionTree.start_node, depth: 0, prefix: '' }
+        ];
+        while (queue.length > 0) {
+            const { id, depth, prefix } = queue.shift()!;
+            if (visited.has(id)) continue;
+            visited.add(id);
+            const n = nodeMap.get(id);
+            if (!n) continue;
             const indent = 10 * depth;
             const indentWidth = contentWidth - indent;
-
-            if ('action' in node) {
-                const actionText = `-> Action: ${node.action}`;
-                const actionLines = doc.splitTextToSize(actionText, indentWidth);
-                doc.setFontSize(11);
-                doc.setFont('helvetica', 'italic');
-                for (const line of actionLines) {
-                    const lineHeight = 11 * 0.3527 * 1.5;
-                    if (y + lineHeight > pageHeight - margin) { doc.addPage(); y = margin; }
-                    doc.text(line, margin + indent, y);
-                    y += lineHeight;
-                }
-            } else if ('question' in node) {
-                const questionText = `? ${node.question}`;
-                const qLines = doc.splitTextToSize(questionText, indentWidth);
-                doc.setFontSize(12);
-                doc.setFont('helvetica', 'bold');
-                for (const line of qLines) {
-                    const lineHeight = 12 * 0.3527 * 1.5;
-                    if (y + lineHeight > pageHeight - margin) { doc.addPage(); y = margin; }
-                    doc.text(line, margin + indent, y);
-                    y += lineHeight;
-                }
-
-                // Yes branch
-                const yesText = `Yes:`;
-                if (y + 10 > pageHeight - margin) { doc.addPage(); y = margin; }
-                doc.setFontSize(11);
-                doc.setFont('helvetica', 'normal');
-                doc.text(yesText, margin + indent + 5, y);
-                y += 5;
-                printTree(node.yes, depth + 1);
-
-                // No branch
-                const noText = `No:`;
-                if (y + 10 > pageHeight - margin) { doc.addPage(); y = margin; }
-                doc.setFont('helvetica', 'normal');
-                doc.text(noText, margin + indent + 5, y);
-                y += 5;
-                printTree(node.no, depth + 1);
+            const icon = n.type === 'decision' ? '? ' : '→ ';
+            const text = `${prefix}${icon}${n.label}`;
+            const lines = doc.splitTextToSize(text, indentWidth);
+            doc.setFontSize(n.type === 'decision' ? 12 : 11);
+            doc.setFont('helvetica', n.type === 'decision' ? 'bold' : 'normal');
+            for (const line of lines) {
+                const lh = (n.type === 'decision' ? 12 : 11) * 0.3527 * 1.5;
+                if (y + lh > pageHeight - margin) { doc.addPage(); y = margin; }
+                doc.text(line, margin + indent, y);
+                y += lh;
             }
-        };
-
-        printTree(decisionTree, 0);
+            for (const edge of (adj.get(id) ?? [])) {
+                const condLabel = edge.condition === 'yes' ? '[YES] ' : edge.condition === 'no' ? '[NO] ' : '';
+                queue.push({ id: edge.to, depth: depth + 1, prefix: condLabel });
+            }
+        }
         addSpacing(8);
     }
+
 
     // ── Checklist ──
     if (checklist && checklist.length > 0) {

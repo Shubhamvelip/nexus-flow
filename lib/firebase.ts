@@ -69,10 +69,23 @@ export interface PolicyWorkflowStep {
     description: string;
 }
 
+/** A flat graph-based decision tree (AI-generated). */
+export interface DecisionTreeNode {
+    id: string;
+    type: 'decision' | 'action';
+    label: string;
+}
+
+export interface DecisionTreeEdge {
+    from: string;
+    to: string;
+    condition?: 'yes' | 'no';
+}
+
 export interface PolicyDecisionTree {
-    question: string;
-    yes: PolicyDecisionTree | { action: string };
-    no: PolicyDecisionTree | { action: string };
+    nodes: DecisionTreeNode[];
+    edges: DecisionTreeEdge[];
+    start_node: string;
 }
 
 export interface PolicyChecklistItem {
@@ -81,13 +94,23 @@ export interface PolicyChecklistItem {
     completed: boolean;
 }
 
+/** A single atomic validation rule extracted from the policy. */
+export interface PolicyRule {
+    id: string;
+    field: string;
+    operator: '>' | '<' | '>=' | '<=' | '==' | '!=';
+    value: string | number | boolean;
+    description: string;
+}
+
 export interface PolicyDocument {
     id?: string;
     title: string;
     input_text: string;
     workflow: PolicyWorkflowStep[];
-    decision_tree: PolicyDecisionTree;
+    decision_tree: PolicyDecisionTree | null;
     checklist: PolicyChecklistItem[];
+    rules: PolicyRule[];
     created_at: Timestamp | Date;
     userId: string;
 }

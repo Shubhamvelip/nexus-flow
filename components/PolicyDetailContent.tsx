@@ -24,6 +24,7 @@ import { InteractiveChecklist } from '@/components/shared/InteractiveChecklist';
 import { PolicyChecklistItem, PolicyDecisionTree, updatePolicyChecklist } from '@/lib/firebase';
 import { exportPolicyToPDF } from '@/lib/export';
 import { toast } from 'sonner';
+import { ValidateCaseSection } from '@/components/shared/ValidateCaseSection';
 
 // ── Types for Firestore policy document ─────────────────────────────────────
 
@@ -32,11 +33,7 @@ interface PolicyDoc {
   title: string;
   input_text?: string;
   workflow: Array<{ step: string; description: string }>;
-  decision_tree: {
-    question: string;
-    yes: unknown;
-    no: unknown;
-  };
+  decision_tree: PolicyDecisionTree | null;
   checklist: PolicyChecklistItem[];
   created_at: { seconds?: number } | null;
 }
@@ -345,9 +342,12 @@ export function PolicyDetailContent({ policyId }: PolicyDetailContentProps) {
             <h2 className="text-sm font-semibold text-white">Decision Tree</h2>
           </div>
 
-          <VisualDecisionTree tree={policy.decision_tree as unknown as Parameters<typeof VisualDecisionTree>[0]['tree']} />
+          <VisualDecisionTree tree={policy.decision_tree} />
         </motion.div>
       </motion.div>
+
+      {/* ── VALIDATE CASE SECTION (always visible) ─────────────────────────── */}
+      <ValidateCaseSection policyId={policyId} />
 
       {/* ── BOTTOM ACTIONS ───────────────────────────────────────────────────── */}
       <motion.div

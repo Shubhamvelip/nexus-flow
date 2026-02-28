@@ -90,6 +90,8 @@ ${notes || ""}
                 title: text,
                 completed: false
             })),
+            graph: generated.graph,
+            rules: generated.rules ?? [],
             userId,
         };
 

@@ -11,7 +11,10 @@ import { OptimisticChecklist } from '@/components/OptimisticChecklist';
 import { DecisionTreeComponent } from '@/components/DecisionTree';
 import { ProgressCircle } from '@/components/ProgressCircle';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Download, Share2, Edit, CheckSquare, Settings2, FileText, ChevronRight } from 'lucide-react';
+import {
+  ArrowLeft, Download, Share2, Edit, CheckSquare, Settings2, FileText, ChevronRight
+} from 'lucide-react';
+import { ValidateCaseSection } from '@/components/shared/ValidateCaseSection';
 
 interface PolicyDetailClientProps {
   policy: Policy;
@@ -232,6 +235,8 @@ export function PolicyDetailClient({
           </Card>
         </motion.div>
       </div>
+
+      <ValidateCaseSection policyId={policy.id} />
     </div>
   );
 }
