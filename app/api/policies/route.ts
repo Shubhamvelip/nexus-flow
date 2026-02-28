@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
-        const { title, input_text, workflow, decision_tree, checklist, rules, userId } = body;
+        const { title, input_text, workflow, decision_tree, checklist, rules, graph, userId } = body;
 
         // Validation
         if (!userId) {
@@ -41,6 +41,7 @@ export async function POST(request: NextRequest) {
             decision_tree,
             checklist,
             rules: Array.isArray(rules) ? rules : [],
+            graph: graph ?? null,
             userId,
         });
 

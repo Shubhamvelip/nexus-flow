@@ -35,6 +35,11 @@ export interface DecisionTree {
   rootNodeId: string;
 }
 
+export interface PolicyGraph {
+  nodes: Array<{ id: string; label: string; type: 'start' | 'process' | 'decision' | 'end' }>;
+  edges: Array<{ source: string; target: string; label?: 'YES' | 'NO' }>;
+}
+
 export interface WorkflowStep {
   id: string;
   title: string;
@@ -55,6 +60,7 @@ export interface Policy {
   steps: WorkflowStep[];
   checklist_items: ChecklistItem[];
   decisionTree: DecisionTree;
+  graph?: PolicyGraph | null;
   completionPercentage: number;
 }
 

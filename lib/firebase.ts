@@ -103,6 +103,11 @@ export interface PolicyRule {
     description: string;
 }
 
+export interface PolicyGraph {
+    nodes: Array<{ id: string; label: string; type: 'start' | 'process' | 'decision' | 'end' }>;
+    edges: Array<{ source: string; target: string; label?: 'YES' | 'NO' }>;
+}
+
 export interface PolicyDocument {
     id?: string;
     title: string;
@@ -111,6 +116,7 @@ export interface PolicyDocument {
     decision_tree: PolicyDecisionTree | null;
     checklist: PolicyChecklistItem[];
     rules: PolicyRule[];
+    graph?: PolicyGraph | null;
     created_at: Timestamp | Date;
     userId: string;
 }

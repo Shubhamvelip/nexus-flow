@@ -21,7 +21,8 @@ import {
 import { WorkflowTimeline } from '@/components/shared/WorkflowTimeline';
 import { VisualDecisionTree } from '@/components/shared/VisualDecisionTree';
 import { InteractiveChecklist } from '@/components/shared/InteractiveChecklist';
-import { PolicyChecklistItem, PolicyDecisionTree, updatePolicyChecklist } from '@/lib/firebase';
+import { WorkflowGraph } from '@/components/shared/WorkflowGraph';
+import { PolicyChecklistItem, PolicyDecisionTree, PolicyGraph, updatePolicyChecklist } from '@/lib/firebase';
 import { exportPolicyToPDF } from '@/lib/export';
 import { toast } from 'sonner';
 import { ValidateCaseSection } from '@/components/shared/ValidateCaseSection';
@@ -35,6 +36,7 @@ interface PolicyDoc {
   workflow: Array<{ step: string; description: string }>;
   decision_tree: PolicyDecisionTree | null;
   checklist: PolicyChecklistItem[];
+  graph?: PolicyGraph | null;
   created_at: { seconds?: number } | null;
 }
 
@@ -343,6 +345,31 @@ export function PolicyDetailContent({ policyId }: PolicyDetailContentProps) {
           </div>
 
           <VisualDecisionTree tree={policy.decision_tree} />
+        </motion.div>
+
+        {/* ── COL 4: WORKFLOW GRAPH ────────────────────────────────────────── */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.35 }}
+          className="bg-[#0f172a] border border-gray-800 rounded-2xl p-5 md:col-span-2 lg:col-span-3 h-[600px] flex flex-col"
+        >
+          <div className="flex items-center gap-2 mb-5 shrink-0">
+            <div className="p-1.5 bg-green-500/10 rounded-lg">
+              <GitBranch className="w-4 h-4 text-green-500" />
+            </div>
+            <h2 className="text-sm font-semibold text-white">Workflow Graph</h2>
+          </div>
+
+          <div className="flex-1 bg-black/40 rounded-xl overflow-hidden min-h-0 relative">
+            {policy.graph?.nodes && policy.graph.nodes.length > 0 ? (
+              <WorkflowGraph graph={policy.graph} />
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-center text-sm text-gray-500 italic">
+                Graph not available for this policy
+              </div>
+            )}
+          </div>
         </motion.div>
       </motion.div>
 

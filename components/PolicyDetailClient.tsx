@@ -7,14 +7,15 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { OptimisticChecklist } from '@/components/OptimisticChecklist';
 import { DecisionTreeComponent } from '@/components/DecisionTree';
 import { ProgressCircle } from '@/components/ProgressCircle';
 import { motion } from 'framer-motion';
+import { InteractiveChecklist } from '@/components/shared/InteractiveChecklist';
 import {
   ArrowLeft, Download, Share2, Edit, CheckSquare, Settings2, FileText, ChevronRight
 } from 'lucide-react';
 import { ValidateCaseSection } from '@/components/shared/ValidateCaseSection';
+import { WorkflowGraph } from '@/components/shared/WorkflowGraph';
 
 interface PolicyDetailClientProps {
   policy: Policy;
@@ -25,7 +26,12 @@ export function PolicyDetailClient({
   policy,
   initialState,
 }: PolicyDetailClientProps) {
-  const [checklistState, setChecklistState] = useState(initialState);
+  const [completedCount, setCompletedCount] = useState(
+    policy.checklist_items.filter(c => c.completed).length
+  );
+
+  const totalCount = policy.checklist_items.length;
+  const currentPct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
   return (
     <div className="space-y-6 p-6">
@@ -98,12 +104,12 @@ export function PolicyDetailClient({
                 Execution Progress
               </h3>
               <p className="text-sm text-gray-400">
-                <span className="text-white font-medium">{Object.values(checklistState.items).filter(Boolean).length}</span> of{' '}
-                <span className="text-white font-medium">{Object.keys(checklistState.items).length}</span> steps completed
+                <span className="text-white font-medium">{completedCount}</span> of{' '}
+                <span className="text-white font-medium">{totalCount}</span> steps completed
               </p>
             </div>
             <ProgressCircle
-              percentage={policy.completionPercentage}
+              percentage={currentPct}
               size="lg"
               title="Overall"
             />
@@ -181,11 +187,10 @@ export function PolicyDetailClient({
                 Action Items Checklist
               </h3>
             </div>
-            <OptimisticChecklist
+            <InteractiveChecklist
               policyId={policy.id}
-              items={policy.checklist_items}
-              initialState={checklistState}
-              onStateChange={setChecklistState}
+              items={policy.checklist_items as any}
+              onUpdate={items => setCompletedCount(items.filter(c => c.completed).length)}
             />
           </Card>
         </motion.div>
@@ -233,6 +238,33 @@ export function PolicyDetailClient({
               {policy.description || policy.title}
             </div>
           </Card>
+        </motion.div>
+
+        {/* Workflow Graph (New) */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.35 }}
+          className="lg:col-span-12 rounded-2xl border border-gray-800 bg-[#0f172a] overflow-hidden"
+        >
+          <div className="flex items-center gap-3 border-b border-gray-800 px-6 py-5 shrink-0">
+            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-green-500/10 text-green-500">
+              <Settings2 className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-white">Workflow Graph</h2>
+              <p className="text-sm text-gray-500">Visual mapping of policy logic</p>
+            </div>
+          </div>
+          <div className="relative" style={{ height: 600 }}>
+            {policy.graph?.nodes && policy.graph.nodes.length > 0 ? (
+              <WorkflowGraph graph={policy.graph} />
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+                <p className="text-sm italic text-gray-500">Graph not available for this policy</p>
+              </div>
+            )}
+          </div>
         </motion.div>
       </div>
 

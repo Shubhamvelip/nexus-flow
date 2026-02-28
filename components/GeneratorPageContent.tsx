@@ -181,6 +181,7 @@ export function GeneratorPageContent() {
           decision_tree: output.decision_tree,
           checklist: output.checklist,
           rules: output.rules ?? [],
+          graph: output.graph,
           userId: user.uid,
         }),
       });
