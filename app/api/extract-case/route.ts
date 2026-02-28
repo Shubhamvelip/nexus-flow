@@ -1,9 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleAIFileManager } from '@google/generative-ai/server';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+const fileManager = new GoogleAIFileManager(process.env.GEMINI_API_KEY || '');
+
+// ── Helper: detect rate-limit errors ────────────────────────────────────────
+// GoogleGenerativeAIFetchError has a numeric `.status` field — check that too.
+function isQuotaError(err: unknown): boolean {
+    if (err && typeof err === 'object' && 'status' in err && (err as { status: number }).status === 429) {
+        return true;
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    return msg.includes('429') || msg.toLowerCase().includes('quota') || msg.toLowerCase().includes('too many requests');
+}
+
 
 export async function POST(request: NextRequest) {
+    let uploadedFileName: string | null = null;
+
     try {
         const formData = await request.formData();
         const policyId = formData.get('policyId') as string;
@@ -16,11 +31,32 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'A PDF file is required' }, { status: 400 });
         }
 
-        // Convert PDF to base64
-        const arrayBuf = await file.arrayBuffer();
-        const base64 = Buffer.from(arrayBuf).toString('base64');
+        // ── 1. Upload the PDF via Gemini File API (no base64 inline data) ─────
+        const buffer = Buffer.from(await file.arrayBuffer());
+        console.log('[ExtractCase] Uploading PDF to Gemini File API …');
 
-        // Fetch policy rules so Gemini knows what fields to extract
+        let uploadResponse;
+        try {
+            uploadResponse = await fileManager.uploadFile(buffer, {
+                mimeType: 'application/pdf',
+                displayName: file.name,
+            });
+        } catch (uploadErr) {
+            console.error('[ExtractCase] uploadFile error:', uploadErr);
+            if (isQuotaError(uploadErr)) {
+                return NextResponse.json(
+                    { error: 'API rate limit exceeded. Please wait a moment and try again.' },
+                    { status: 429 }
+                );
+            }
+            throw uploadErr;
+        }
+
+        uploadedFileName = uploadResponse.file.name;   // keep for cleanup
+        const fileUri = uploadResponse.file.uri;
+        console.log('[ExtractCase] File uploaded →', fileUri);
+
+        // ── 2. Fetch policy rules so Gemini knows what fields to extract ───────
         let policyRules: Array<{ field: string; description: string }> = [];
         try {
             const base = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
@@ -39,7 +75,8 @@ export async function POST(request: NextRequest) {
             ? `The policy has these rules that check the following fields:\n${policyRules.map(r => `  - "${r.field}": ${r.description}`).join('\n')}\n\nExtract values for ALL of these fields if present.`
             : 'Extract all measurable facts, values, conditions, dates, and boolean states.';
 
-        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+        // ── 3. Run native PDF extraction via Gemini ────────────────────────────
+        const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
         const prompt = `You are a case data extractor. Read the uploaded PDF document and extract structured case data as a flat JSON object.
 
@@ -63,23 +100,33 @@ Example output:
   "hazardousPresent": false
 }`;
 
-        const result = await model.generateContent([
-            {
-                inlineData: {
-                    mimeType: 'application/pdf',
-                    data: base64,
+        let result;
+        try {
+            result = await model.generateContent([
+                {
+                    fileData: {
+                        mimeType: 'application/pdf',
+                        fileUri,
+                    },
                 },
-            },
-            { text: prompt },
-        ]);
+                { text: prompt },
+            ]);
+        } catch (genErr) {
+            if (isQuotaError(genErr)) {
+                return NextResponse.json(
+                    { error: 'API rate limit exceeded. Please wait a moment and try again.' },
+                    { status: 429 }
+                );
+            }
+            throw genErr;
+        }
 
         const raw = result.response.text().trim();
         console.log('[ExtractCase] Gemini raw:', raw);
 
-        // Parse extracted JSON
+        // ── 4. Parse extracted JSON ─────────────────────────────────────────────
         let extractedData: Record<string, unknown> = {};
         try {
-            // Strip markdown fences if present
             const cleaned = raw.replace(/^```[a-z]*\s*/i, '').replace(/```\s*$/, '').trim();
             const start = cleaned.indexOf('{');
             const end = cleaned.lastIndexOf('}');
@@ -96,7 +143,7 @@ Example output:
             }, { status: 422 });
         }
 
-        // Now run validation using the existing validate-case logic
+        // ── 5. Run validation ───────────────────────────────────────────────────
         const base = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
         const validationRes = await fetch(`${base}/api/validate-case`, {
             method: 'POST',
@@ -105,14 +152,28 @@ Example output:
         });
         const validationResult = await validationRes.json();
 
-        return NextResponse.json({
-            extractedData,
-            ...validationResult,
-        }, { status: 200 });
+        return NextResponse.json(
+            { extractedData, ...validationResult },
+            { status: 200 }
+        );
 
     } catch (err) {
         const message = err instanceof Error ? err.message : 'Internal server error';
-        console.error('[POST /api/extract-case]', message);
+        // Log the full error object so the real status/message is visible in the server terminal
+        console.error('[POST /api/extract-case] raw error:', err);
+
+        if (isQuotaError(err)) {
+            return NextResponse.json(
+                { error: 'API rate limit exceeded. Please wait a moment and try again.' },
+                { status: 429 }
+            );
+        }
         return NextResponse.json({ error: message }, { status: 500 });
+
+    } finally {
+        // ── 6. Always delete the Gemini-hosted file to avoid stale uploads ──────
+        if (uploadedFileName) {
+            fileManager.deleteFile(uploadedFileName).catch(() => { /* best-effort */ });
+        }
     }
 }

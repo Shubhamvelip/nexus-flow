@@ -85,8 +85,8 @@ function ValidationResults({ result }: { result: ValidationResult }) {
                                 <div className="flex items-center gap-2 mb-0.5">
                                     <p className="text-xs font-mono text-gray-500">{r.ruleId}</p>
                                     <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${r.status === 'passed' ? 'bg-emerald-500/20 text-emerald-400' :
-                                            r.status === 'failed' ? 'bg-red-500/20 text-red-400' :
-                                                'bg-amber-500/20 text-amber-400'
+                                        r.status === 'failed' ? 'bg-red-500/20 text-red-400' :
+                                            'bg-amber-500/20 text-amber-400'
                                         }`}>{RULE_STATUS_LABEL[r.status]}</span>
                                 </div>
                                 <p className="text-sm text-gray-300 leading-snug">{r.message}</p>
@@ -203,7 +203,8 @@ export function ValidateCaseSection({ policyId }: ValidateCaseSectionProps) {
         } catch (err) {
             const msg = err instanceof Error ? err.message : 'Extraction failed';
             console.error('[ValidateCase/PDF] ERROR:', msg);
-            setError(msg.includes('extract') ? msg : 'Validation failed. Check input format.');
+            // Surface the actual server error (e.g. rate-limit, parse failure) instead of always showing a generic fallback
+            setError(msg || 'Extraction failed. Please try again.');
         } finally {
             setIsLoading(false);
         }
@@ -229,8 +230,8 @@ export function ValidateCaseSection({ policyId }: ValidateCaseSectionProps) {
                         key={m}
                         onClick={() => { setMode(m); resetResult(); }}
                         className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold transition-all ${mode === m
-                                ? 'bg-blue-600 text-white shadow-md'
-                                : 'text-gray-400 hover:text-white'
+                            ? 'bg-blue-600 text-white shadow-md'
+                            : 'text-gray-400 hover:text-white'
                             }`}
                     >
                         {m === 'json' ? '{ }  JSON Input' : <><FileUp className="w-3.5 h-3.5" />Upload PDF</>}
@@ -270,8 +271,8 @@ export function ValidateCaseSection({ policyId }: ValidateCaseSectionProps) {
                     <div
                         onClick={() => fileInputRef.current?.click()}
                         className={`relative flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed p-8 cursor-pointer transition-all ${pdfFile
-                                ? 'border-blue-500/50 bg-blue-500/5'
-                                : 'border-gray-700 hover:border-gray-500 bg-[#080e1a]'
+                            ? 'border-blue-500/50 bg-blue-500/5'
+                            : 'border-gray-700 hover:border-gray-500 bg-[#080e1a]'
                             }`}
                     >
                         <FileUp className={`w-8 h-8 ${pdfFile ? 'text-blue-400' : 'text-gray-600'}`} />
